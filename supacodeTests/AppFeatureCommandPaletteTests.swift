@@ -493,6 +493,99 @@ struct AppFeatureCommandPaletteTests {
     await store.finish()
   }
 
+  @Test(.dependencies) func runScriptDelegateDispatchesAppAction() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.runScript)))
+    await store.receive(\.runScript)
+  }
+
+  @Test(.dependencies) func stopRunScriptDelegateDispatchesAppAction() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.stopRunScript)))
+    await store.receive(\.stopRunScript)
+  }
+
+  @Test(.dependencies) func togglePinWorktreeWhenNotPinnedDispatchesPin() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(
+      .commandPalette(.delegate(.togglePinWorktree("/tmp/repo/wt-1", isCurrentlyPinned: false)))
+    )
+    await store.receive(\.repositories.worktreeOrdering.pinWorktree)
+  }
+
+  @Test(.dependencies) func togglePinWorktreeWhenPinnedDispatchesUnpin() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(
+      .commandPalette(.delegate(.togglePinWorktree("/tmp/repo/wt-1", isCurrentlyPinned: true)))
+    )
+    await store.receive(\.repositories.worktreeOrdering.unpinWorktree)
+  }
+
+  @Test(.dependencies) func renameBranchDelegateDispatchesRequestPrompt() async {
+    let worktree = makeWorktree(
+      id: "/tmp/repo-rename/wt-1",
+      name: "wt-1",
+      repoRoot: "/tmp/repo-rename"
+    )
+    let repository = makeRepository(id: "/tmp/repo-rename", worktrees: [worktree])
+    var repositoriesState = RepositoriesFeature.State()
+    repositoriesState.repositories = [repository]
+    repositoriesState.selection = .worktree(worktree.id)
+    let store = TestStore(
+      initialState: AppFeature.State(
+        repositories: repositoriesState,
+        settings: SettingsFeature.State()
+      )
+    ) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.renameBranch)))
+    await store.receive(\.repositories.requestRenameBranchPrompt) {
+      $0.repositories.nextPendingRenameBranchRequestID = 1
+      $0.repositories.pendingRenameBranchRequest = PendingRenameBranchRequest(
+        id: 1,
+        worktreeID: worktree.id
+      )
+    }
+  }
+
+  @Test(.dependencies) func renameBranchDelegateNoopsWithoutSelectedWorktree() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+
+    await store.send(.commandPalette(.delegate(.renameBranch)))
+    await store.finish()
+  }
+
+  @Test(.dependencies) func runCustomCommandDelegateDispatchesAppAction() async {
+    let store = TestStore(initialState: AppFeature.State()) {
+      AppFeature()
+    }
+    store.exhaustivity = .off
+
+    await store.send(.commandPalette(.delegate(.runCustomCommand(3))))
+    await store.receive(\.runCustomCommand)
+  }
+
   @Test(.dependencies) func closePullRequestDispatchesAction() async {
     let store = TestStore(initialState: AppFeature.State()) {
       AppFeature()
