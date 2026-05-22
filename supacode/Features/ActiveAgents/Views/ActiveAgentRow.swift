@@ -78,32 +78,55 @@ struct ActiveAgentRow: View {
 }
 
 struct BaguaWorkingIndicator: View {
-  static let frames = ["☰", "☱", "☲", "☳", "☴", "☵", "☶", "☷"]
-  static let frameDuration = 0.12
+  static let cycleDuration: Double = 1.0
+
+  static let perimeter: [(row: Int, col: Int)] = [
+    (0, 0), (0, 1), (0, 2),
+    (1, 2),
+    (2, 2), (2, 1), (2, 0),
+    (1, 0),
+  ]
 
   var body: some View {
-    TimelineView(.periodic(from: .now, by: Self.frameDuration)) { context in
-      frameText(Self.frame(at: context.date))
+    TimelineView(.animation) { context in
+      let elapsed = context.date.timeIntervalSinceReferenceDate
+      let phase =
+        (elapsed / Self.cycleDuration).truncatingRemainder(dividingBy: 1)
+        * Double(Self.perimeter.count)
+
+      VStack(spacing: 2) {
+        ForEach(0..<3, id: \.self) { row in
+          HStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { col in
+              dot(opacity: opacity(row: row, col: col, phase: phase))
+            }
+          }
+        }
+      }
+      .frame(width: 20, height: 18)
+      .accessibilityHidden(true)
     }
   }
 
-  static func frame(at date: Date) -> String {
-    frames[frameIndex(at: date)]
+  private func opacity(row: Int, col: Int, phase: Double) -> Double {
+    if row == 1 && col == 1 { return 0.18 }
+    guard
+      let index = Self.perimeter.firstIndex(where: { $0.row == row && $0.col == col })
+    else {
+      return 0.18
+    }
+    let count = Double(Self.perimeter.count)
+    let raw = abs(Double(index) - phase)
+    let distance = min(raw, count - raw)
+    let intensity = max(0, 1 - distance / 3)
+    return 0.18 + intensity * 0.82
   }
 
-  static func frameIndex(at date: Date) -> Int {
-    let tick = Int(date.timeIntervalSinceReferenceDate / frameDuration)
-    let cycleLength = (frames.count * 2) - 2
-    let cycleIndex = ((tick % cycleLength) + cycleLength) % cycleLength
-    return cycleIndex < frames.count ? cycleIndex : cycleLength - cycleIndex
-  }
-
-  private func frameText(_ frame: String) -> some View {
-    Text(frame)
-      .font(.system(size: 17, weight: .bold, design: .monospaced))
-      .lineLimit(1)
-      .frame(width: 20, height: 18)
-      .accessibilityHidden(true)
+  private func dot(opacity: Double) -> some View {
+    Circle()
+      .fill(.foreground)
+      .frame(width: 4, height: 4)
+      .opacity(opacity)
   }
 }
 
@@ -133,4 +156,10 @@ extension AgentDisplayState {
       return .secondary
     }
   }
+}
+
+#Preview {
+  BaguaWorkingIndicator()
+    .foregroundStyle(.orange)
+    .frame(width: 100, height: 100)
 }

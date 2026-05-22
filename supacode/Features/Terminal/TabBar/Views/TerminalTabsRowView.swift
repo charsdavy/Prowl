@@ -76,10 +76,6 @@ struct TerminalTabsRowView: View {
               )
             )
             .id(id)
-
-            if index < openedTabs.count - 1 {
-              TerminalTabDivider()
-            }
           }
         }
       }

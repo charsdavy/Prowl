@@ -13,6 +13,7 @@ struct TerminalTabLabelView: View {
       if tab.isDirty || tab.icon != nil {
         TerminalTabIconBadge(tab: tab, isActive: isActive)
       }
+      Spacer(minLength: TerminalTabBarMetrics.contentTrailingSpacing)
       Text(tab.displayTitle)
         .font(.caption)
         .lineLimit(1)

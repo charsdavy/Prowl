@@ -86,13 +86,6 @@ struct RepositorySectionView: View {
             }
           }
       }
-      if let color = appearance.color {
-        Circle()
-          .fill(color.color)
-          .frame(width: 8, height: 8)
-          .help(color.displayName)
-          .accessibilityLabel(Text("Repo color: \(color.displayName)"))
-      }
       if isHovering {
         Menu {
           Button("Repo Settings") {
@@ -178,6 +171,13 @@ struct RepositorySectionView: View {
           .foregroundStyle(.secondary)
           .help(isExpanded ? "Collapse" : "Expand")
         }
+      }
+      if let color = appearance.color {
+        Circle()
+          .glassEffect(.regular.tint(color.color))
+          .frame(width: 8, height: 8)
+          .help(color.displayName)
+          .accessibilityLabel(Text("Repo color: \(color.displayName)"))
       }
     }
     .frame(maxWidth: .infinity, minHeight: headerCellHeight, maxHeight: .infinity, alignment: .center)

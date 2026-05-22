@@ -68,6 +68,7 @@ struct ShelfSpineView: View {
       // if/else did). Fill is derived from a stepped accent-alpha ladder
       // so the open book glows strongest and neighbors fade outward.
       Rectangle().fill(spineBackgroundColor)
+        .ignoresSafeArea(edges: .all)
     )
     // Whole-spine tap target. Inner Buttons (header, tab slots, controls)
     // absorb their own clicks; clicks that fall on empty areas (scroll

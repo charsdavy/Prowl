@@ -119,8 +119,9 @@ struct TerminalTabView: View {
     }
     .padding(.bottom, isActive ? TerminalTabBarMetrics.activeTabBottomPadding : 0)
     .offset(y: isActive ? TerminalTabBarMetrics.activeTabOffset : 0)
-    .clipShape(.rect(cornerRadius: TerminalTabBarMetrics.tabCornerRadius))
-    .contentShape(.rect)
+    .clipShape(.capsule)
+    .contentShape(.capsule)
+    .glassEffect()
     .onHover { hovering in
       isHovering = hovering
     }

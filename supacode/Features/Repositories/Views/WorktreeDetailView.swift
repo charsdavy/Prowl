@@ -64,6 +64,7 @@ struct WorktreeDetailView: View {
     )
     .navigationTitle(WindowTitle.compute(repositories: repositories, terminalManager: terminalManager))
     .toolbar(removing: repositories.isShowingCanvas ? nil : .title)
+    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .toolbar {
       if repositories.isShowingCanvas {
         canvasToolbarContent(

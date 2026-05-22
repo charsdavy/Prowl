@@ -5,33 +5,6 @@ import SwiftUI
 // Uses LazyVStack rather than List for repository drag precision; keyboard
 // worktree navigation goes through Cmd+Ctrl+↑/↓ (`selectNextWorktree`).
 struct SidebarListView: View {
-  enum RepositoryListHeaderAction: Equatable {
-    case expandAll
-    case collapseAll
-
-    var title: String {
-      switch self {
-      case .expandAll:
-        return "Expand All"
-      case .collapseAll:
-        return "Collapse All"
-      }
-    }
-
-    var systemImageName: String {
-      "chevron.right"
-    }
-
-    var rotation: Angle {
-      switch self {
-      case .expandAll:
-        return .zero
-      case .collapseAll:
-        return .degrees(90)
-      }
-    }
-  }
-
   @Bindable var store: StoreOf<RepositoriesFeature>
   @Binding var expandedRepoIDs: Set<Repository.ID>
   @Binding var sidebarSelections: Set<SidebarSelection>
@@ -48,18 +21,7 @@ struct SidebarListView: View {
     let state = store.state
     let hotkeyRows = state.orderedWorktreeRows(includingRepositoryIDs: expandedRepoIDs)
     let presentation = state.sidebarPresentation(expandedRepositoryIDs: expandedRepoIDs)
-    let expandableRepositoryIDs = Self.expandableRepositoryIDs(in: state.repositories)
-    let repositoryListHeaderAction = Self.repositoryListHeaderAction(
-      expandedRepoIDs: expandedRepoIDs,
-      expandableRepositoryIDs: expandableRepositoryIDs
-    )
     let repositoryItems = presentation.items.filter(\.isRepositoryOrderItem)
-    let showsRepositoryListHeader = presentation.items.contains { item in
-      if case .listHeader = item {
-        return true
-      }
-      return false
-    }
     let selectedWorktreeIDs = Self.selectedWorktreeIDs(in: state)
     let selectedSurfaceID = state.selectedWorktreeID.flatMap { worktreeID in
       terminalManager.stateIfExists(for: worktreeID)?.activeSurfaceID
@@ -82,26 +44,31 @@ struct SidebarListView: View {
 
     ScrollViewReader { scrollProxy in
       ScrollView {
-        LazyVStack(spacing: 0) {
-          if showsRepositoryListHeader {
-            repositoryListHeader(
-              action: repositoryListHeaderAction,
-              expandableRepositoryIDs: expandableRepositoryIDs
-            )
-          }
-
-          if repositoryItems.isEmpty {
-            emptyRepositoryHint()
-          }
-
-          ForEach(Array(repositoryItems.enumerated()), id: \.element.id) { index, item in
-            repositoryItemView(
-              item,
-              index: index,
-              repositoryOrderIDs: presentation.repositoryOrderIDs,
-              hotkeyRows: hotkeyRows,
-              selectedWorktreeIDs: selectedWorktreeIDs
-            )
+        LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+          Section {
+            if repositoryItems.isEmpty {
+              emptyRepositoryHint()
+            }
+            ForEach(Array(repositoryItems.enumerated()), id: \.element.id) { index, item in
+              repositoryItemView(
+                item,
+                index: index,
+                repositoryOrderIDs: presentation.repositoryOrderIDs,
+                hotkeyRows: hotkeyRows,
+                selectedWorktreeIDs: selectedWorktreeIDs
+              )
+            }
+          } header: {
+            Picker("", selection: $store.topSegment.sending(\.setTopSegment)) {
+              Text("Tabbed").tag(TopSegment.tabbed)
+              Text("Canvas").tag(TopSegment.canvas)
+              Text("Shelf").tag(TopSegment.shelf)
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.large)
+            .labelsHidden()
+            .padding(.horizontal)
+            .padding(.vertical, 4)
           }
         }
         .padding(.vertical, 2)
@@ -109,7 +76,6 @@ struct SidebarListView: View {
       }
       .scrollIndicators(.never)
       .frame(minWidth: 220)
-      .background(.bar)
       .clipped()
       .onGeometryChange(for: Double.self) { proxy in
         Double(proxy.size.height)
@@ -125,24 +91,6 @@ struct SidebarListView: View {
           endSidebarDrag()
         }
       }
-      .safeAreaInset(edge: .top, spacing: 0) {
-        HStack(spacing: 4) {
-          CanvasSidebarButton(
-            store: store,
-            isSelected: state.isShowingCanvas
-          )
-          ShelfSidebarButton(
-            store: store,
-            isSelected: state.isShowingShelf
-          )
-        }
-        .padding(.top, 4)
-        .padding(.horizontal, 4)
-        .background(.bar)
-        .overlay(alignment: .bottom) {
-          Divider()
-        }
-      }
       .safeAreaInset(edge: .bottom, spacing: 0) {
         SidebarFooterView(store: store)
           .onGeometryChange(for: Double.self) { proxy in
@@ -150,29 +98,28 @@ struct SidebarListView: View {
           } action: { newHeight in
             sidebarFooterHeight = newHeight
           }
+          .padding(.vertical, 4)
       }
       .overlay(alignment: .bottom) {
-        ZStack(alignment: .bottom) {
-          ActiveAgentsPanel(
-            store: store.scope(state: \.activeAgents, action: \.activeAgents),
-            repositoryNamesByWorktreeID: agentWorktreeMetadata.repositoryNamesByWorktreeID,
-            branchNamesByWorktreeID: agentWorktreeMetadata.branchNamesByWorktreeID,
-            repositoryColorsByWorktreeID: agentWorktreeMetadata.repositoryColorsByWorktreeID,
-            selectedSurfaceID: selectedSurfaceID,
-            height: panelHeight,
-            maximumHeight: maximumPanelHeight,
-            onHeightChanged: { height in
-              resizingPanelHeight = height
-            },
-            onHeightChangeEnded: { height in
-              resizingPanelHeight = nil
-              store.send(.activeAgents(.panelHeightChanged(height)))
-            }
-          )
-          .frame(height: panelHeight)
-          .offset(y: panelOffset)
-        }
+        ActiveAgentsPanel(
+          store: store.scope(state: \.activeAgents, action: \.activeAgents),
+          repositoryNamesByWorktreeID: agentWorktreeMetadata.repositoryNamesByWorktreeID,
+          branchNamesByWorktreeID: agentWorktreeMetadata.branchNamesByWorktreeID,
+          repositoryColorsByWorktreeID: agentWorktreeMetadata.repositoryColorsByWorktreeID,
+          selectedSurfaceID: selectedSurfaceID,
+          height: panelHeight,
+          maximumHeight: maximumPanelHeight,
+          onHeightChanged: { height in
+            resizingPanelHeight = height
+          },
+          onHeightChangeEnded: { height in
+            resizingPanelHeight = nil
+            store.send(.activeAgents(.panelHeightChanged(height)))
+          }
+        )
+        .padding(8)
         .frame(height: panelHeight)
+        .offset(y: panelOffset)
         .clipped()
         .padding(.bottom, sidebarFooterHeight)
         .allowsHitTesting(!state.activeAgents.isPanelHidden)
@@ -190,6 +137,16 @@ struct SidebarListView: View {
       .task(id: pendingSidebarReveal?.id) {
         await revealPendingSidebarWorktree(pendingSidebarReveal, with: scrollProxy)
       }
+      .toolbar {
+        ToolbarItem(placement: .automatic) {
+          Button {
+            store.send(.setOpenPanelPresented(true))
+          } label: {
+            Label("Add Repository", systemImage: "folder.badge.plus")
+          }
+          .help("Add Repository")
+        }
+      }
     }  // ScrollViewReader
   }
 
@@ -204,55 +161,6 @@ struct SidebarListView: View {
         }
       }
     }
-  }
-
-  private func repositoryListHeader(
-    action: RepositoryListHeaderAction,
-    expandableRepositoryIDs: Set<Repository.ID>
-  ) -> some View {
-    HStack(spacing: 4) {
-      Text("Repositories")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-      Button {
-        store.send(.setOpenPanelPresented(true))
-      } label: {
-        Label("Add Repository", systemImage: "plus")
-          .labelStyle(.iconOnly)
-          .frame(width: 20, height: 20)
-          .contentShape(.rect)
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(.secondary)
-      .help("Add Repository")
-      if !expandableRepositoryIDs.isEmpty {
-        Button {
-          withAnimation(.easeOut(duration: 0.2)) {
-            switch action {
-            case .expandAll:
-              expandedRepoIDs.formUnion(expandableRepositoryIDs)
-            case .collapseAll:
-              expandedRepoIDs.subtract(expandableRepositoryIDs)
-            }
-          }
-        } label: {
-          Label(action.title, systemImage: action.systemImageName)
-            .labelStyle(.iconOnly)
-            .frame(width: 20, height: 20)
-            .rotationEffect(action.rotation)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(action.title)
-      }
-    }
-    .frame(maxWidth: .infinity, minHeight: 26, alignment: .center)
-    .padding(.leading, 12)
-    .padding(.trailing, 7)
-    .padding(.top, 2)
-    .padding(.bottom, 4)
   }
 
   private func emptyRepositoryHint() -> some View {
@@ -409,29 +317,6 @@ struct SidebarListView: View {
       scrollProxy.scrollTo(SidebarScrollID.worktree(pendingSidebarReveal.worktreeID), anchor: .center)
     }
     store.send(.consumePendingSidebarReveal(pendingSidebarReveal.id))
-  }
-
-  static func expandableRepositoryIDs<Repositories: Sequence>(
-    in repositories: Repositories
-  ) -> Set<Repository.ID> where Repositories.Element == Repository {
-    Set(
-      repositories
-        .filter(\.capabilities.supportsWorktrees)
-        .map(\.id)
-    )
-  }
-
-  static func repositoryListHeaderAction(
-    expandedRepoIDs: Set<Repository.ID>,
-    expandableRepositoryIDs: Set<Repository.ID>
-  ) -> RepositoryListHeaderAction {
-    !expandedRepoIDs.isDisjoint(with: expandableRepositoryIDs)
-      ? .collapseAll
-      : .expandAll
-  }
-
-  static func showsRepositoryListHeader(repositoryCount: Int) -> Bool {
-    SidebarPresentation.showsListHeader(repositoryCount: repositoryCount)
   }
 
   static func selectedWorktreeIDs(in state: RepositoriesFeature.State) -> Set<Worktree.ID> {

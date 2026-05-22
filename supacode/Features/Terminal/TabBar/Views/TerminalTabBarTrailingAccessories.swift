@@ -35,8 +35,10 @@ struct TerminalTabBarTrailingAccessories: View {
       )
       .disabled(!canSplit)
     }
-    .frame(height: TerminalTabBarMetrics.barHeight)
-    .padding(.trailing, 8)
+    .frame(height: TerminalTabBarMetrics.barHeight - 4)
+    .padding(.horizontal, 8)
+    .glassEffect(.regular, in: Capsule())
+    .padding(.vertical, 2)
   }
 
   private var newTabButton: some View {
