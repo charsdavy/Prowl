@@ -17,8 +17,11 @@ struct WorktreeTerminalTabsView: View {
   var body: some View {
     let state = manager.state(for: worktree) { shouldRunSetupScript }
     let _ = configReloadCounter
-    // 4pt gap between the tab bar and the terminal surface below it.
-    VStack(spacing: 4) {
+    // The gap between the tab bar and the terminal surface lives inside the
+    // tab bar (`TerminalTabBarMetrics.barBottomGap`) so the chrome tint band
+    // fills it, rather than a transparent VStack seam that reveals the
+    // translucent window background when `background-opacity` < 1.
+    VStack(spacing: 0) {
       tabBar(state: state)
       tabContent(state: state)
     }

@@ -3,7 +3,8 @@ import SwiftUI
 struct TerminalTabBarView: View {
   @Bindable var manager: TerminalTabManager
   /// Chrome tint painted as a full-width strip behind the whole bar row —
-  /// the left gap, the tabs, and the trailing accessories — so the bar's
+  /// the left gap, the tabs, and the trailing accessories — and extended
+  /// down across the bottom gap to the terminal surface, so the bar's
   /// backing reads as part of the same tinted chrome as the toolbar above.
   /// The tabs keep their own neutral capsule on top. `nil` leaves the bare
   /// (untinted) bar chrome.
@@ -50,9 +51,15 @@ struct TerminalTabBarView: View {
     // is inactive — the tint band below stays out of this scope so it keeps
     // its hue on blur, matching the toolbar / nav chrome (which don't gray out).
     .saturation(activeState == .inactive ? 0 : 1)
-    // Tint the full-width bar backing (behind the left gap, tabs capsule, and
-    // trailing accessories) so it joins the toolbar / nav chrome as one tinted
-    // surface. Fixed band alpha mirrors `windowChromeTint`; `nil` leaves it bare.
+    // Reserve the gap down to the terminal *inside* the tinted region (added
+    // after saturation, before the tint) so the band fills it instead of the
+    // parent leaving a transparent seam that reveals the translucent window
+    // background when `background-opacity` < 1.
+    .padding(.bottom, TerminalTabBarMetrics.barBottomGap)
+    // Tint the full-width bar backing (behind the left gap, tabs capsule,
+    // trailing accessories, and the bottom gap) so it joins the toolbar / nav
+    // chrome as one tinted surface. Fixed band alpha mirrors `windowChromeTint`;
+    // `nil` leaves it bare.
     .background {
       if let barTint {
         barTint.color.opacity(barTint.alpha)

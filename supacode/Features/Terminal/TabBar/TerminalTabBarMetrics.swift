@@ -3,6 +3,11 @@ import CoreGraphics
 enum TerminalTabBarMetrics {
   static let barHeight: CGFloat = 31
   static let barPadding: CGFloat = 4
+  // Gap between the tab bar and the terminal surface below it. The chrome
+  // tint band extends across this gap so it reads as one continuous surface
+  // instead of revealing the translucent window background when
+  // `background-opacity` < 1.
+  static let barBottomGap: CGFloat = 4
   static let tabHeight: CGFloat = 30
   static let tabMinWidth: CGFloat = 140
   static let tabCornerRadius: CGFloat = 0
