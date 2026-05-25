@@ -234,21 +234,17 @@ private struct WindowToolbarChromeBackgroundModifier: ViewModifier {
 
   @ViewBuilder
   func body(content: Content) -> some View {
-    if WindowChromeTint.usesExplicitToolbarBackground(isFullScreen: isFullScreen) {
-      let background = WindowChromeTint.fullscreenToolbarBackgroundComponents(
-        fill: fill,
-        colorScheme: colorScheme
-      ).color
+    let background = WindowChromeTint.fullscreenToolbarBackgroundComponents(
+      fill: fill,
+      colorScheme: colorScheme
+    ).color
+    let visibility: Visibility =
+      WindowChromeTint.usesExplicitToolbarBackground(isFullScreen: isFullScreen) ? .visible : .hidden
 
-      content
-        .toolbarBackground(background, for: .windowToolbar)
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-        .background { WindowFullScreenReader(isFullScreen: $isFullScreen) }
-    } else {
-      content
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .background { WindowFullScreenReader(isFullScreen: $isFullScreen) }
-    }
+    content
+      .toolbarBackground(background, for: .windowToolbar)
+      .toolbarBackgroundVisibility(visibility, for: .windowToolbar)
+      .background { WindowFullScreenReader(isFullScreen: $isFullScreen) }
   }
 }
 
@@ -308,7 +304,10 @@ private final class WindowFullScreenReaderView: NSView {
     observedWindow = window
 
     guard let window else {
-      onFullScreenChange?(false)
+      // SwiftUI can temporarily detach this reader while rebuilding the
+      // toolbar host. Detach is not an exit-fullscreen signal; publishing
+      // `false` here would hide the fallback background for one frame and
+      // produce a visible flicker.
       return
     }
 
@@ -345,7 +344,8 @@ private final class WindowFullScreenReaderView: NSView {
   }
 
   private func publishFullScreenState() {
-    onFullScreenChange?(window?.styleMask.contains(.fullScreen) == true)
+    guard let window else { return }
+    onFullScreenChange?(window.styleMask.contains(.fullScreen))
   }
 
   private static let observedWindowNotifications: [NSNotification.Name] = [
