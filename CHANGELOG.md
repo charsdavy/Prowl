@@ -1,5 +1,25 @@
 # Changelog
 
+## [2026.5.25](https://github.com/onevcat/Prowl/releases/tag/v2026.5.25)
+
+This release focuses on reliability improvements and a handful of UX polish items.
+
+### New
+
+- **Canvas is now available as a default view.** Go to Settings → Appearance → Default View and choose "Canvas View" to have Prowl open directly into Canvas on launch. If no worktrees are present at launch, it falls back to Normal view.
+- Prowl now asks for confirmation before closing a pane, tab, or group of tabs that contain active or recently-completed-but-unseen terminal work, preventing accidental data loss.
+
+### Fixed
+
+- The toolbar no longer loses its tint color when entering or exiting macOS fullscreen. Prowl's chosen Light or Dark appearance is now used correctly throughout the fullscreen transition.
+- Clicking an entry in the Active Agents list for a plain folder now navigates correctly instead of silently doing nothing.
+- Worktrees that resolve to the same path are no longer listed twice after a repository refresh.
+- Terminal text reads (selection, clipboard, accessibility, Quick Look, Services) now correctly handle content that contains embedded NUL bytes, preventing silent truncation.
+
+### Improved
+
+- Updated Sparkle to 2.9.2, addressing a potential crash in the auto-update framework that was observed in the previous beta build.
+
 ## [2026.5.24](https://github.com/onevcat/Prowl/releases/tag/v2026.5.24)
 
 This release redesigns the terminal tab bar and sidebar to sit more naturally within macOS, introduces a window tint that colors the chrome to match your repository, and adds keyboard navigation for the Active Agents panel.
