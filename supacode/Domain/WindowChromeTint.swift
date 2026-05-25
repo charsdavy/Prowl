@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Unified color logic for the window *chrome* tint — the nav-panel band
@@ -17,6 +18,28 @@ import SwiftUI
 ///   pair the Shelf spine uses, so the chrome and the open spine match.
 /// - `.custom` ⇒ a single user-chosen color, ignoring per-repo colors.
 enum WindowChromeTint {
+  enum ToolbarFallbackEvent {
+    case windowState(isFullScreen: Bool)
+    case willEnterFullScreen
+    case didEnterFullScreen
+    case willExitFullScreen
+    case didExitFullScreen
+  }
+
+  struct RGBComponents: Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+
+    var color: Color {
+      Color(.sRGB, red: red, green: green, blue: blue)
+    }
+
+    var luminance: Double {
+      0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+  }
+
   /// A resolved chrome band: a base color plus the alpha it should be
   /// filled at. `nil` from `fill(...)` means "draw no band".
   struct Fill: Equatable {
@@ -74,6 +97,76 @@ enum WindowChromeTint {
       return Fill(color: customColor, alpha: saturatedPeakAlpha)
     }
   }
+
+  /// Resolves the fallback fullscreen toolbar background to an opaque sRGB
+  /// color under the requested app appearance. The normal window path keeps
+  /// the toolbar background hidden so the original content tint / system
+  /// material composition remains untouched; this fallback is only for the
+  /// fullscreen AppKit toolbar surface, which can stop sampling the content
+  /// behind it.
+  static func fullscreenToolbarBackgroundComponents(
+    fill: Fill?,
+    colorScheme: ColorScheme
+  ) -> RGBComponents {
+    let base = resolvedComponents(for: NSColor.windowBackgroundColor, colorScheme: colorScheme)
+    guard let fill else {
+      return base
+    }
+
+    let overlay = resolvedComponents(for: fill.color, colorScheme: colorScheme)
+    let alpha = min(max(fill.alpha, 0), 1)
+    return RGBComponents(
+      red: overlay.red * alpha + base.red * (1 - alpha),
+      green: overlay.green * alpha + base.green * (1 - alpha),
+      blue: overlay.blue * alpha + base.blue * (1 - alpha)
+    )
+  }
+
+  private static func resolvedComponents(for color: Color, colorScheme: ColorScheme) -> RGBComponents {
+    resolvedComponents(for: NSColor(color), colorScheme: colorScheme)
+  }
+
+  private static func resolvedComponents(for color: NSColor, colorScheme: ColorScheme) -> RGBComponents {
+    withAppearance(for: colorScheme) {
+      let resolved = color.usingColorSpace(.sRGB) ?? fallbackColor(for: colorScheme)
+      return RGBComponents(
+        red: Double(resolved.redComponent),
+        green: Double(resolved.greenComponent),
+        blue: Double(resolved.blueComponent)
+      )
+    }
+  }
+
+  private static func withAppearance<T>(for colorScheme: ColorScheme, _ body: () -> T) -> T {
+    guard let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua) else {
+      return body()
+    }
+
+    var result: T?
+    appearance.performAsCurrentDrawingAppearance {
+      result = body()
+    }
+    return result!
+  }
+
+  private static func fallbackColor(for colorScheme: ColorScheme) -> NSColor {
+    colorScheme == .dark ? .black : .white
+  }
+
+  static func usesExplicitToolbarBackground(isFullScreen: Bool) -> Bool {
+    isFullScreen
+  }
+
+  static func toolbarFallbackState(current: Bool, event: ToolbarFallbackEvent) -> Bool {
+    switch event {
+    case .windowState(let isFullScreen):
+      return isFullScreen
+    case .willEnterFullScreen, .didEnterFullScreen, .willExitFullScreen:
+      return true
+    case .didExitFullScreen:
+      return false
+    }
+  }
 }
 
 extension View {
@@ -89,6 +182,15 @@ extension View {
   ///     `.leading` (nav). Normal uses both; Canvas uses `.leading` only.
   func windowChromeTint(_ fill: WindowChromeTint.Fill?, edges: Edge.Set) -> some View {
     modifier(WindowChromeTintModifier(fill: fill, edges: edges))
+  }
+
+  /// Sets the real SwiftUI/AppKit window toolbar background. This is kept
+  /// separate from `windowChromeTint`: the tint bands color the content
+  /// behind full-bleed chrome, while the toolbar itself must also have an
+  /// explicit background because macOS can stop sampling that content when
+  /// a window is zoomed or fullscreen.
+  func windowToolbarChromeBackground(_ fill: WindowChromeTint.Fill?) -> some View {
+    modifier(WindowToolbarChromeBackgroundModifier(fill: fill))
   }
 }
 
@@ -141,5 +243,145 @@ private struct WindowChromeTintModifier: ViewModifier {
     fill.color
       .opacity(fill.alpha)
       .allowsHitTesting(false)
+  }
+}
+
+private struct WindowToolbarChromeBackgroundModifier: ViewModifier {
+  let fill: WindowChromeTint.Fill?
+  @Environment(\.colorScheme) private var colorScheme
+  @State private var isFullScreen = false
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    let background = WindowChromeTint.fullscreenToolbarBackgroundComponents(
+      fill: fill,
+      colorScheme: colorScheme
+    ).color
+    let visibility: Visibility =
+      WindowChromeTint.usesExplicitToolbarBackground(isFullScreen: isFullScreen) ? .visible : .hidden
+
+    content
+      .toolbarBackground(background, for: .windowToolbar)
+      .toolbarBackgroundVisibility(visibility, for: .windowToolbar)
+      .background { WindowFullScreenReader(isFullScreen: $isFullScreen) }
+  }
+}
+
+private struct WindowFullScreenReader: NSViewRepresentable {
+  @Binding var isFullScreen: Bool
+
+  func makeNSView(context: Context) -> WindowFullScreenReaderView {
+    let view = WindowFullScreenReaderView()
+    view.onFullScreenChange = makeChangeHandler()
+    return view
+  }
+
+  func updateNSView(_ nsView: WindowFullScreenReaderView, context: Context) {
+    nsView.onFullScreenChange = makeChangeHandler()
+    nsView.refresh()
+  }
+
+  private func makeChangeHandler() -> (Bool) -> Void {
+    let binding = $isFullScreen
+    return { isFullScreen in
+      guard binding.wrappedValue != isFullScreen else { return }
+      DispatchQueue.main.async {
+        guard binding.wrappedValue != isFullScreen else { return }
+        binding.wrappedValue = isFullScreen
+      }
+    }
+  }
+}
+
+@MainActor
+private final class WindowFullScreenReaderView: NSView {
+  var onFullScreenChange: ((Bool) -> Void)?
+
+  private weak var observedWindow: NSWindow?
+  private var observers: [NSObjectProtocol] = []
+
+  deinit {
+    MainActor.assumeIsolated {
+      removeObservers()
+    }
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    updateObservedWindow()
+  }
+
+  func refresh() {
+    updateObservedWindow()
+    publishFullScreenState()
+  }
+
+  private func updateObservedWindow() {
+    guard observedWindow !== window else { return }
+
+    removeObservers()
+    observedWindow = window
+
+    guard let window else {
+      // SwiftUI can temporarily detach this reader while rebuilding the
+      // toolbar host. Detach is not an exit-fullscreen signal; publishing
+      // `false` here would hide the fallback background for one frame and
+      // produce a visible flicker.
+      return
+    }
+
+    observe(window, name: NSWindow.willEnterFullScreenNotification) { [weak self] in
+      self?.publishFullScreenEvent(.willEnterFullScreen)
+    }
+    observe(window, name: NSWindow.didEnterFullScreenNotification) { [weak self] in
+      self?.publishFullScreenEvent(.didEnterFullScreen)
+    }
+    observe(window, name: NSWindow.willExitFullScreenNotification) { [weak self] in
+      self?.publishFullScreenEvent(.willExitFullScreen)
+    }
+    observe(window, name: NSWindow.didExitFullScreenNotification) { [weak self] in
+      self?.publishFullScreenEvent(.didExitFullScreen)
+    }
+
+    publishFullScreenState()
+  }
+
+  private func observe(
+    _ window: NSWindow,
+    name: NSNotification.Name,
+    handler: @escaping @MainActor () -> Void
+  ) {
+    let observer = NotificationCenter.default.addObserver(
+      forName: name,
+      object: window,
+      queue: .main
+    ) { _ in
+      MainActor.assumeIsolated {
+        handler()
+      }
+    }
+    observers.append(observer)
+  }
+
+  private func removeObservers() {
+    let notificationCenter = NotificationCenter.default
+    for observer in observers {
+      notificationCenter.removeObserver(observer)
+    }
+    observers.removeAll()
+  }
+
+  private func publishFullScreenState() {
+    guard let window else { return }
+    publishFullScreenEvent(.windowState(isFullScreen: window.styleMask.contains(.fullScreen)))
+  }
+
+  private func publishFullScreenEvent(_ event: WindowChromeTint.ToolbarFallbackEvent) {
+    onFullScreenChange?(
+      WindowChromeTint.toolbarFallbackState(
+        current: window?.styleMask.contains(.fullScreen) == true,
+        event: event
+      )
+    )
   }
 }
