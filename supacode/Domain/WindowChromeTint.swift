@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Unified color logic for the window *chrome* tint — the nav-panel band
@@ -75,13 +74,6 @@ enum WindowChromeTint {
       return Fill(color: customColor, alpha: saturatedPeakAlpha)
     }
   }
-
-  /// Resolves the actual top chrome band height. SwiftUI's top safe-area
-  /// inset can collapse to zero when macOS moves the titlebar/toolbar into
-  /// full-screen chrome, so keep an AppKit-derived window chrome fallback.
-  static func topBandHeight(safeAreaTop: CGFloat, windowChromeTop: CGFloat) -> CGFloat {
-    max(safeAreaTop, windowChromeTop)
-  }
 }
 
 extension View {
@@ -98,6 +90,15 @@ extension View {
   func windowChromeTint(_ fill: WindowChromeTint.Fill?, edges: Edge.Set) -> some View {
     modifier(WindowChromeTintModifier(fill: fill, edges: edges))
   }
+
+  /// Sets the real SwiftUI/AppKit window toolbar background. This is kept
+  /// separate from `windowChromeTint`: the tint bands color the content
+  /// behind full-bleed chrome, while the toolbar itself must also have an
+  /// explicit background because macOS can stop sampling that content when
+  /// a window is zoomed or fullscreen.
+  func windowToolbarChromeBackground(_ fill: WindowChromeTint.Fill?) -> some View {
+    modifier(WindowToolbarChromeBackgroundModifier(fill: fill))
+  }
 }
 
 /// Measures the toolbar (top) and sidebar (leading) safe-area insets of
@@ -108,14 +109,8 @@ private struct WindowChromeTintModifier: ViewModifier {
 
   @State private var topInset: CGFloat = 0
   @State private var leadingInset: CGFloat = 0
-  @State private var windowChromeTopInset: CGFloat = 0
 
   func body(content: Content) -> some View {
-    let resolvedTopInset = WindowChromeTint.topBandHeight(
-      safeAreaTop: topInset,
-      windowChromeTop: windowChromeTopInset
-    )
-
     content
       // Content draws under the transparent titlebar, so the top
       // safe-area inset equals the toolbar/titlebar height — exactly the
@@ -136,7 +131,7 @@ private struct WindowChromeTintModifier: ViewModifier {
       .overlay(alignment: .top) {
         if let fill, edges.contains(.top) {
           band(fill)
-            .frame(height: resolvedTopInset)
+            .frame(height: topInset)
             .frame(maxWidth: .infinity)
             .ignoresSafeArea(.container, edges: .top)
         }
@@ -149,9 +144,6 @@ private struct WindowChromeTintModifier: ViewModifier {
             .ignoresSafeArea(.container, edges: [.leading, .top, .bottom])
         }
       }
-      .background {
-        WindowChromeMetricsReader(topChromeHeight: $windowChromeTopInset)
-      }
   }
 
   private func band(_ fill: WindowChromeTint.Fill) -> some View {
@@ -161,113 +153,18 @@ private struct WindowChromeTintModifier: ViewModifier {
   }
 }
 
-private struct WindowChromeMetricsReader: NSViewRepresentable {
-  @Binding var topChromeHeight: CGFloat
+private struct WindowToolbarChromeBackgroundModifier: ViewModifier {
+  let fill: WindowChromeTint.Fill?
 
-  func makeNSView(context: Context) -> WindowChromeMetricsView {
-    let view = WindowChromeMetricsView()
-    view.onTopChromeHeightChange = makeHeightChangeHandler()
-    return view
-  }
-
-  func updateNSView(_ nsView: WindowChromeMetricsView, context: Context) {
-    nsView.onTopChromeHeightChange = makeHeightChangeHandler()
-    nsView.refresh()
-  }
-
-  private func makeHeightChangeHandler() -> (CGFloat) -> Void {
-    let binding = $topChromeHeight
-    return { height in
-      guard binding.wrappedValue != height else { return }
-      DispatchQueue.main.async {
-        guard binding.wrappedValue != height else { return }
-        binding.wrappedValue = height
-      }
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if let fill {
+      content
+        .toolbarBackground(fill.color.opacity(fill.alpha), for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+    } else {
+      content
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
   }
-}
-
-private final class WindowChromeMetricsView: NSView {
-  var onTopChromeHeightChange: ((CGFloat) -> Void)?
-
-  private weak var observedWindow: NSWindow?
-  private var observers: [NSObjectProtocol] = []
-
-  deinit {
-    removeObservers()
-  }
-
-  override func viewDidMoveToWindow() {
-    super.viewDidMoveToWindow()
-    updateObservedWindow()
-  }
-
-  override func layout() {
-    super.layout()
-    publishTopChromeHeight()
-  }
-
-  func refresh() {
-    updateObservedWindow()
-    publishTopChromeHeight()
-  }
-
-  private func updateObservedWindow() {
-    guard observedWindow !== window else { return }
-
-    removeObservers()
-    observedWindow = window
-
-    guard let window else {
-      onTopChromeHeightChange?(0)
-      return
-    }
-
-    let notificationCenter = NotificationCenter.default
-    for name in Self.observedWindowNotifications {
-      let observer = notificationCenter.addObserver(
-        forName: name,
-        object: window,
-        queue: .main
-      ) { [weak self] _ in
-        self?.schedulePublishTopChromeHeight()
-      }
-      observers.append(observer)
-    }
-
-    publishTopChromeHeight()
-  }
-
-  private func removeObservers() {
-    let notificationCenter = NotificationCenter.default
-    for observer in observers {
-      notificationCenter.removeObserver(observer)
-    }
-    observers.removeAll()
-  }
-
-  private func schedulePublishTopChromeHeight() {
-    publishTopChromeHeight()
-    DispatchQueue.main.async { [weak self] in
-      self?.publishTopChromeHeight()
-    }
-  }
-
-  private func publishTopChromeHeight() {
-    guard let window else {
-      onTopChromeHeightChange?(0)
-      return
-    }
-
-    let topChromeHeight = max(0, window.frame.height - window.contentLayoutRect.height)
-    onTopChromeHeightChange?(topChromeHeight)
-  }
-
-  private static let observedWindowNotifications: [NSNotification.Name] = [
-    NSWindow.didResizeNotification,
-    NSWindow.didEndLiveResizeNotification,
-    NSWindow.didEnterFullScreenNotification,
-    NSWindow.didExitFullScreenNotification,
-    NSWindow.didChangeScreenNotification,
-  ]
 }

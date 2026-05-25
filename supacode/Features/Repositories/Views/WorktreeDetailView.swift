@@ -68,7 +68,6 @@ struct WorktreeDetailView: View {
     )
     .navigationTitle(WindowTitle.compute(repositories: repositories, terminalManager: terminalManager))
     .toolbar(removing: repositories.isShowingCanvas ? nil : .title)
-    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .toolbar {
       if repositories.isShowingCanvas {
         canvasToolbarContent(
@@ -103,6 +102,7 @@ struct WorktreeDetailView: View {
         )
       }
     }
+    .windowToolbarChromeBackground(toolbarChromeFill(repositories: repositories))
     let actions = makeFocusedActions(
       repositories: repositories,
       hasActiveWorktree: hasActiveTerminalTarget,
@@ -363,6 +363,14 @@ struct WorktreeDetailView: View {
       customColor: settingsFile.global.windowTintCustomColor.color,
       repositoryColor: repositoryColor
     )
+  }
+
+  /// Resolves the real window toolbar background. Unlike the content tint
+  /// bands, this applies to the AppKit/SwiftUI toolbar surface itself, which
+  /// remains visible when macOS changes the zoomed/fullscreen window layout.
+  private func toolbarChromeFill(repositories: RepositoriesFeature.State) -> WindowChromeTint.Fill? {
+    guard !repositories.isShowingCanvas else { return nil }
+    return chromeFill(repositories: repositories, context: .normal)
   }
 
   private func applyFocusedActions<Content: View>(

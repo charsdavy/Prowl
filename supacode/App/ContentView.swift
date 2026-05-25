@@ -82,9 +82,6 @@ struct ContentView: View {
     }
     .focusedSceneValue(\.toggleLeftSidebarAction, toggleLeftSidebar)
     .focusedSceneValue(\.revealInSidebarAction, revealInSidebarAction)
-    .background {
-      WindowAppearanceSetter(colorScheme: store.settings.appearanceMode.colorScheme)
-    }
     .overlay {
       CommandPaletteOverlayView(
         store: store.scope(state: \.commandPalette, action: \.commandPalette),
