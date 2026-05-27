@@ -5,18 +5,17 @@ import ComposableArchitecture
 /// and the attention bounce. Wrapping these in a dependency keeps the reducer
 /// testable and matches how the other AppKit side effects are injected.
 struct DockClient {
-  /// Show (`true`) or clear (`false`) the notification badge on the Dock tile.
-  var setNotificationBadge: @MainActor @Sendable (_ isVisible: Bool) -> Void
+  /// Set the Dock tile's notification badge to `count` unread items, or clear
+  /// it when `count` is zero.
+  var setNotificationBadge: @MainActor @Sendable (_ count: Int) -> Void
   /// Bounce the Dock icon according to the configured mode. `.off` is a no-op.
   var bounce: @MainActor @Sendable (_ mode: DockBounceMode) -> Void
 }
 
 extension DockClient: DependencyKey {
   static let liveValue = DockClient(
-    setNotificationBadge: { isVisible in
-      // An empty (but non-nil) label renders the bare red badge dot; `nil`
-      // hides it. A glyph inside the pill would just look redundant.
-      NSApplication.shared.dockTile.badgeLabel = isVisible ? "" : nil
+    setNotificationBadge: { count in
+      NSApplication.shared.dockTile.badgeLabel = count > 0 ? String(count) : nil
     },
     bounce: { mode in
       switch mode {

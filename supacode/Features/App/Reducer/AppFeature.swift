@@ -237,7 +237,7 @@ struct AppFeature {
             await terminalClient.send(.setAgentDetectionEnabled(agentDetectionEnabled))
           },
           .run { _ in
-            await dockClient.setNotificationBadge(false)
+            await dockClient.setNotificationBadge(0)
           },
           .run { send in
             for await event in await terminalClient.events() {
@@ -498,7 +498,7 @@ struct AppFeature {
           settings: state.settings,
           customCommands: state.selectedCustomCommands
         )
-        let showDot = settings.showNotificationDotOnDock && state.notificationIndicatorCount > 0
+        let badgeCount = settings.showNotificationDotOnDock ? state.notificationIndicatorCount : 0
         return .merge(
           .send(.repositories(.githubIntegration(.setGithubIntegrationEnabled(settings.githubIntegrationEnabled)))),
           .send(
@@ -572,7 +572,7 @@ struct AppFeature {
             }
           },
           .run { _ in
-            await dockClient.setNotificationBadge(showDot)
+            await dockClient.setNotificationBadge(badgeCount)
           }
         )
 
@@ -1172,7 +1172,7 @@ struct AppFeature {
           return .send(.updates(.debugSimulateUpdateFound))
 
         case .commandPalette(.delegate(.debugLightDockNotificationDot)):
-          return .run { _ in await dockClient.setNotificationBadge(true) }
+          return .run { _ in await dockClient.setNotificationBadge(1) }
       #endif
 
       case .commandPalette:
@@ -1212,9 +1212,9 @@ struct AppFeature {
 
       case .terminalEvent(.notificationIndicatorChanged(let count)):
         state.notificationIndicatorCount = count
-        let showDot = state.settings.showNotificationDotOnDock && count > 0
+        let badgeCount = state.settings.showNotificationDotOnDock ? count : 0
         return .run { _ in
-          await dockClient.setNotificationBadge(showDot)
+          await dockClient.setNotificationBadge(badgeCount)
         }
 
       case .terminalEvent(.runScriptStatusChanged(let worktreeID, let isRunning)):

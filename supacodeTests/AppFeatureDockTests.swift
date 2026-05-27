@@ -78,13 +78,13 @@ struct AppFeatureDockTests {
   @Test(.dependencies) func indicatorChangeShowsBadgeWhenEnabledAndCountPositive() async {
     var globalSettings = GlobalSettings.default
     globalSettings.showNotificationDotOnDock = true
-    let badges = LockIsolated<[Bool]>([])
+    let badges = LockIsolated<[Int]>([])
     let store = TestStore(
       initialState: AppFeature.State(settings: SettingsFeature.State(settings: globalSettings))
     ) {
       AppFeature()
     } withDependencies: {
-      $0.dockClient.setNotificationBadge = { isVisible in badges.withValue { $0.append(isVisible) } }
+      $0.dockClient.setNotificationBadge = { count in badges.withValue { $0.append(count) } }
     }
     store.exhaustivity = .off
 
@@ -93,19 +93,19 @@ struct AppFeatureDockTests {
     }
     await store.finish()
 
-    #expect(badges.value == [true])
+    #expect(badges.value == [2])
   }
 
   @Test(.dependencies) func indicatorChangeClearsBadgeWhenDisabled() async {
     var globalSettings = GlobalSettings.default
     globalSettings.showNotificationDotOnDock = false
-    let badges = LockIsolated<[Bool]>([])
+    let badges = LockIsolated<[Int]>([])
     let store = TestStore(
       initialState: AppFeature.State(settings: SettingsFeature.State(settings: globalSettings))
     ) {
       AppFeature()
     } withDependencies: {
-      $0.dockClient.setNotificationBadge = { isVisible in badges.withValue { $0.append(isVisible) } }
+      $0.dockClient.setNotificationBadge = { count in badges.withValue { $0.append(count) } }
     }
     store.exhaustivity = .off
 
@@ -114,25 +114,25 @@ struct AppFeatureDockTests {
     }
     await store.finish()
 
-    #expect(badges.value == [false])
+    #expect(badges.value == [0])
   }
 
   @Test(.dependencies) func indicatorChangeClearsBadgeWhenCountZero() async {
     var globalSettings = GlobalSettings.default
     globalSettings.showNotificationDotOnDock = true
-    let badges = LockIsolated<[Bool]>([])
+    let badges = LockIsolated<[Int]>([])
     let store = TestStore(
       initialState: AppFeature.State(settings: SettingsFeature.State(settings: globalSettings))
     ) {
       AppFeature()
     } withDependencies: {
-      $0.dockClient.setNotificationBadge = { isVisible in badges.withValue { $0.append(isVisible) } }
+      $0.dockClient.setNotificationBadge = { count in badges.withValue { $0.append(count) } }
     }
     store.exhaustivity = .off
 
     await store.send(.terminalEvent(.notificationIndicatorChanged(count: 0)))
     await store.finish()
 
-    #expect(badges.value == [false])
+    #expect(badges.value == [0])
   }
 }
