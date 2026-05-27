@@ -235,6 +235,51 @@ struct AppFeature {
     return resolved
   }
 
+  /// Applies a worktree's repository settings (open action, run script) into
+  /// state. Shared by the normal `worktreeSettingsLoaded` action and the Canvas
+  /// focus path so both stay in sync.
+  private func applyWorktreeSettings(_ settings: RepositorySettings, into state: inout State) {
+    @Shared(.settingsFile) var settingsFile
+    let normalizedDefaultEditorID = OpenWorktreeAction.normalizedDefaultEditorID(
+      settingsFile.global.defaultEditorID
+    )
+    state.openActionSelection = OpenWorktreeAction.fromSettingsID(
+      settings.openActionID,
+      defaultEditorID: normalizedDefaultEditorID
+    )
+    state.selectedRunScript = settings.runScript
+  }
+
+  /// Applies a worktree's user settings (custom commands, keybindings) into
+  /// state and returns the effect that re-registers custom shortcuts. Shared by
+  /// the normal `worktreeUserSettingsLoaded` action and the Canvas focus path.
+  private func applyWorktreeUserSettings(
+    _ settings: UserRepositorySettings,
+    into state: inout State
+  ) -> Effect<Action> {
+    state.selectedCustomCommands = UserRepositorySettings.normalizedCommands(settings.customCommands)
+    state.resolvedKeybindings = resolvedKeybindings(
+      settings: state.settings,
+      customCommands: state.selectedCustomCommands
+    )
+    let userOverrideConflicts = AppShortcuts.userOverrideConflicts(in: state.selectedCustomCommands)
+    let shortcuts: [UserCustomShortcut] = state.selectedCustomCommands.compactMap { command in
+      let commandID = LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+      return state.resolvedKeybindings.keybinding(for: commandID)?.userCustomShortcut
+    }
+    return .run { _ in
+      let logger = SupaLogger("Shortcuts")
+      for conflict in userOverrideConflicts {
+        logger.warning(
+          "shortcut_conflict reason=userOverride app_action=\"\(conflict.appActionTitle)\" "
+            + "app_shortcut=\(conflict.appShortcutDisplay) custom_command=\"\(conflict.commandTitle)\" "
+            + "custom_shortcut=\(conflict.commandShortcutDisplay) result=customOverride"
+        )
+      }
+      await customShortcutRegistryClient.setShortcuts(shortcuts)
+    }
+  }
+
   var body: some Reducer<State, Action> {
     let core = Reduce<State, Action> { state, action in
       switch action {
@@ -832,10 +877,14 @@ struct AppFeature {
         let rootURL = worktree.repositoryRootURL
         @Shared(.repositorySettings(rootURL)) var repositorySettings
         @Shared(.userRepositorySettings(rootURL)) var userRepositorySettings
-        return .concatenate(
-          .send(.worktreeSettingsLoaded(repositorySettings, worktreeID: worktreeID)),
-          .send(.worktreeUserSettingsLoaded(userRepositorySettings, worktreeID: worktreeID))
-        )
+        // Apply both settings in this single reduce pass instead of dispatching
+        // follow-up `.send`s. The Canvas focus ID (an `@Observable` on the
+        // terminal manager) updates synchronously on card tap, so the toolbar's
+        // Run + Custom Command items must update in the same transaction —
+        // otherwise the command list lands a frame later and the toolbar
+        // visibly reflows when switching between cards with different commands.
+        applyWorktreeSettings(repositorySettings, into: &state)
+        return applyWorktreeUserSettings(userRepositorySettings, into: &state)
 
       case .runScriptDraftChanged(let script):
         state.runScriptDraft = script
@@ -959,42 +1008,14 @@ struct AppFeature {
         guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
           return .none
         }
-        @Shared(.settingsFile) var settingsFile
-        let normalizedDefaultEditorID = OpenWorktreeAction.normalizedDefaultEditorID(
-          settingsFile.global.defaultEditorID
-        )
-        state.openActionSelection = OpenWorktreeAction.fromSettingsID(
-          settings.openActionID,
-          defaultEditorID: normalizedDefaultEditorID
-        )
-        state.selectedRunScript = settings.runScript
+        applyWorktreeSettings(settings, into: &state)
         return .none
 
       case .worktreeUserSettingsLoaded(let settings, let worktreeID):
         guard actionTargetWorktree(repositories: state.repositories)?.id == worktreeID else {
           return .none
         }
-        state.selectedCustomCommands = UserRepositorySettings.normalizedCommands(settings.customCommands)
-        state.resolvedKeybindings = resolvedKeybindings(
-          settings: state.settings,
-          customCommands: state.selectedCustomCommands
-        )
-        let userOverrideConflicts = AppShortcuts.userOverrideConflicts(in: state.selectedCustomCommands)
-        let shortcuts: [UserCustomShortcut] = state.selectedCustomCommands.compactMap { command in
-          let commandID = LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
-          return state.resolvedKeybindings.keybinding(for: commandID)?.userCustomShortcut
-        }
-        return .run { _ in
-          let logger = SupaLogger("Shortcuts")
-          for conflict in userOverrideConflicts {
-            logger.warning(
-              "shortcut_conflict reason=userOverride app_action=\"\(conflict.appActionTitle)\" "
-                + "app_shortcut=\(conflict.appShortcutDisplay) custom_command=\"\(conflict.commandTitle)\" "
-                + "custom_shortcut=\(conflict.commandShortcutDisplay) result=customOverride"
-            )
-          }
-          await customShortcutRegistryClient.setShortcuts(shortcuts)
-        }
+        return applyWorktreeUserSettings(settings, into: &state)
 
       case .systemNotificationsPermissionFailed(let errorMessage):
         return .concatenate(

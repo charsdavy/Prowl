@@ -505,11 +505,10 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.canvasFocusedWorktreeChanged(worktree.id))
-    await store.receive(\.worktreeSettingsLoaded) {
+    // Canvas focus applies both repository and user settings in a single reduce
+    // pass so the toolbar updates atomically with the focus change.
+    await store.send(.canvasFocusedWorktreeChanged(worktree.id)) {
       $0.openActionSelection = expectedDefaultOpenAction()
-    }
-    await store.receive(\.worktreeUserSettingsLoaded) {
       $0.selectedCustomCommands = settings.customCommands
       $0.resolvedKeybindings = KeybindingResolver.resolve(
         schema: .appResolverSchema(customCommands: settings.customCommands),
@@ -519,6 +518,7 @@ struct AppFeatureCustomCommandTests {
           .overrides
       )
     }
+    await store.finish()
   }
 
   @Test(.dependencies) func canvasFocusWithMultipleReposUsesPrimaryFocusedWorktree() async {
@@ -570,12 +570,9 @@ struct AppFeatureCustomCommandTests {
       }
     }
 
-    await store.send(.canvasFocusedWorktreeChanged(worktreeB.id))
-    await store.receive(\.worktreeSettingsLoaded) {
+    await store.send(.canvasFocusedWorktreeChanged(worktreeB.id)) {
       $0.openActionSelection = expectedDefaultOpenAction()
       $0.selectedRunScript = "npm run repo-b"
-    }
-    await store.receive(\.worktreeUserSettingsLoaded) {
       $0.selectedCustomCommands = [commandB]
       $0.resolvedKeybindings = KeybindingResolver.resolve(
         schema: .appResolverSchema(customCommands: [commandB]),

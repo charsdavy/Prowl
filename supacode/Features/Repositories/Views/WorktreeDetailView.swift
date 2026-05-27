@@ -28,6 +28,7 @@ struct WorktreeDetailView: View {
     let customCommands: [UserCustomCommand]
     let isUpdateAvailable: Bool
     let availableUpdateVersion: String?
+    let showRunButtonInToolbar: Bool
   }
 
   @Bindable var store: StoreOf<AppFeature>
@@ -92,7 +93,8 @@ struct WorktreeDetailView: View {
             runScriptIsRunning: runScriptIsRunning,
             customCommands: customCommands,
             isUpdateAvailable: state.updates.isUpdateAvailable,
-            availableUpdateVersion: state.updates.availableVersion
+            availableUpdateVersion: state.updates.availableVersion,
+            showRunButtonInToolbar: settingsFile.global.showRunButtonInToolbar
           )
         )
       } else if hasActiveTerminalTarget,
@@ -192,53 +194,89 @@ struct WorktreeDetailView: View {
           store.send(.updates(.checkForUpdates))
         }
       }
-      if state.runScriptIsRunning || state.runScriptEnabled {
-        RunScriptToolbarButton(
-          isRunning: state.runScriptIsRunning,
-          isEnabled: state.runScriptEnabled,
-          runHelpText: AppShortcuts.helpText(
-            title: "Run Script",
-            commandID: AppShortcuts.CommandID.runScript,
-            in: store.resolvedKeybindings
-          ),
-          stopHelpText: AppShortcuts.helpText(
-            title: "Stop Script",
-            commandID: AppShortcuts.CommandID.stopScript,
-            in: store.resolvedKeybindings
-          ),
-          runShortcut: store.resolvedKeybindings.display(for: AppShortcuts.CommandID.runScript),
-          stopShortcut: store.resolvedKeybindings.display(for: AppShortcuts.CommandID.stopScript),
-          runAction: { store.send(.runScript) },
-          stopAction: { store.send(.stopRunScript) }
-        )
-      }
-      ForEach(Array(state.customCommands.enumerated()).prefix(3), id: \.element.id) { index, command in
-        UserCustomCommandToolbarButton(
-          title: command.resolvedTitle,
-          systemImage: command.resolvedSystemImage,
-          shortcut: store.resolvedKeybindings.display(
-            for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
-          ),
-          isEnabled: command.hasRunnableCommand,
-          action: {
-            store.send(.runCustomCommand(index))
-          }
-        )
-      }
-      if state.customCommands.count > 3 {
-        CustomCommandOverflowButton(
-          entries: Array(state.customCommands.enumerated().dropFirst(3)).map {
-            (index: $0.offset, command: $0.element)
-          },
-          shortcutDisplay: { command in
-            store.resolvedKeybindings.display(
-              for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+    }
+
+    let showRunButton =
+      state.showRunButtonInToolbar
+      && (state.runScriptIsRunning || state.runScriptEnabled)
+    let inlineCommands = Array(state.customCommands.enumerated().prefix(3))
+    let overflowCommands = Array(state.customCommands.enumerated().dropFirst(3))
+    // A fixed separator splits the Run + Custom Command cluster from the
+    // notification group, mirroring the Normal toolbar.
+    //
+    // INTENTIONAL DIVERGENCE FROM THE NORMAL TOOLBAR: the whole cluster is a
+    // single `ToolbarItem` (an HStack) here, whereas `commandToolbarItems`
+    // (Normal mode) lays the buttons out as separate items / a
+    // `ToolbarItemGroup`. The reason is how each mode updates NSToolbar (which
+    // SwiftUI's `.toolbar` bridges to):
+    //   - Normal: switching worktree swaps the whole detail view, so NSToolbar
+    //     is rebuilt wholesale — no per-item diff, no animation.
+    //   - Canvas: `CanvasView` stays mounted across card switches; only the
+    //     toolbar items change. With a multi-item structure NSToolbar performs
+    //     an incremental insert/remove with its own animation (which SwiftUI
+    //     transactions can't suppress), briefly overflowing the toolbar — the
+    //     visible "jump" when switching between cards with different command
+    //     counts.
+    // Collapsing the cluster into one item keeps NSToolbar's item set stable,
+    // so a command-count change is just an internal HStack relayout. Do NOT
+    // "unify" this back into a `ToolbarItemGroup` to match Normal — that
+    // reintroduces the jump.
+    if showRunButton || !state.customCommands.isEmpty {
+      ToolbarSpacer(.fixed)
+      ToolbarItem(placement: .primaryAction) {
+        // `spacing: 0` keeps the cluster as tight as the Normal toolbar's
+        // ToolbarItemGroup (whose buttons sit nearly flush on macOS 26); the
+        // buttons' own internal padding provides the visible gap.
+        HStack(spacing: 0) {
+          if showRunButton {
+            RunScriptToolbarButton(
+              isRunning: state.runScriptIsRunning,
+              isEnabled: state.runScriptEnabled,
+              runHelpText: AppShortcuts.helpText(
+                title: "Run Script",
+                commandID: AppShortcuts.CommandID.runScript,
+                in: store.resolvedKeybindings
+              ),
+              stopHelpText: AppShortcuts.helpText(
+                title: "Stop Script",
+                commandID: AppShortcuts.CommandID.stopScript,
+                in: store.resolvedKeybindings
+              ),
+              runShortcut: store.resolvedKeybindings.display(for: AppShortcuts.CommandID.runScript),
+              stopShortcut: store.resolvedKeybindings.display(for: AppShortcuts.CommandID.stopScript),
+              runAction: { store.send(.runScript) },
+              stopAction: { store.send(.stopRunScript) }
             )
-          },
-          onRunCustomCommand: { index in
-            store.send(.runCustomCommand(index))
           }
-        )
+          ForEach(inlineCommands, id: \.element.id) { index, command in
+            UserCustomCommandToolbarButton(
+              title: command.resolvedTitle,
+              systemImage: command.resolvedSystemImage,
+              shortcut: store.resolvedKeybindings.display(
+                for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+              ),
+              isEnabled: command.hasRunnableCommand,
+              action: {
+                store.send(.runCustomCommand(index))
+              }
+            )
+          }
+          if !overflowCommands.isEmpty {
+            CustomCommandOverflowButton(
+              entries: overflowCommands.map {
+                (index: $0.offset, command: $0.element)
+              },
+              shortcutDisplay: { command in
+                store.resolvedKeybindings.display(
+                  for: LegacyCustomCommandShortcutMigration.customCommandBindingID(for: command.id)
+                )
+              },
+              onRunCustomCommand: { index in
+                store.send(.runCustomCommand(index))
+              }
+            )
+          }
+        }
       }
     }
   }
