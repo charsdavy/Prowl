@@ -65,8 +65,6 @@ struct AppearanceSettingsView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
 
-          Divider()
-
           Picker("Tint spines in Shelf View", selection: $store.shelfSpineTintFallback) {
             ForEach(ShelfSpineTintFallback.allCases) { fallback in
               Text(fallback.title).tag(fallback)
