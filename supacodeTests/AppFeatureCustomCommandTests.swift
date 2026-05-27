@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import DependenciesTestSupport
 import Foundation
+import IdentifiedCollections
 import Sharing
 import Testing
 
@@ -518,26 +519,127 @@ struct AppFeatureCustomCommandTests {
     }
   }
 
+  @Test(.dependencies) func canvasFocusWithMultipleReposUsesPrimaryFocusedWorktree() async {
+    let worktreeA = makeWorktree(id: "/tmp/repo-a/wt-a", name: "wt-a", repoRoot: "/tmp/repo-a")
+    let worktreeB = makeWorktree(id: "/tmp/repo-b/wt-b", name: "wt-b", repoRoot: "/tmp/repo-b")
+    let commandA = UserCustomCommand(
+      title: "Repo A Build",
+      systemImage: "a.circle",
+      command: "make repo-a",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let commandB = UserCustomCommand(
+      title: "Repo B Build",
+      systemImage: "b.circle",
+      command: "make repo-b",
+      execution: .shellScript,
+      shortcut: nil
+    )
+    let sent = LockIsolated<[TerminalClient.Command]>([])
+    let store = withDependencies {
+      $0.defaultFileStorage = .inMemory
+    } operation: {
+      @Shared(.repositorySettings(worktreeA.repositoryRootURL)) var repositorySettingsA
+      @Shared(.repositorySettings(worktreeB.repositoryRootURL)) var repositorySettingsB
+      @Shared(.userRepositorySettings(worktreeA.repositoryRootURL)) var userRepositorySettingsA
+      @Shared(.userRepositorySettings(worktreeB.repositoryRootURL)) var userRepositorySettingsB
+      $repositorySettingsA.withLock { $0.runScript = "npm run repo-a" }
+      $repositorySettingsB.withLock { $0.runScript = "npm run repo-b" }
+      $userRepositorySettingsA.withLock { $0.customCommands = [commandA] }
+      $userRepositorySettingsB.withLock { $0.customCommands = [commandB] }
+
+      var repositories = makeRepositoriesState(worktrees: [worktreeA, worktreeB])
+      repositories.selection = .canvas
+      var state = AppFeature.State(
+        repositories: repositories,
+        settings: SettingsFeature.State()
+      )
+      state.selectedRunScript = "npm run repo-a"
+      state.selectedCustomCommands = [commandA]
+
+      return TestStore(initialState: state) {
+        AppFeature()
+      } withDependencies: {
+        $0.terminalClient.canvasFocusedWorktreeID = { worktreeB.id }
+        $0.terminalClient.send = { command in
+          sent.withValue { $0.append(command) }
+        }
+      }
+    }
+
+    await store.send(.canvasFocusedWorktreeChanged(worktreeB.id))
+    await store.receive(\.worktreeSettingsLoaded) {
+      $0.selectedRunScript = "npm run repo-b"
+    }
+    await store.receive(\.worktreeUserSettingsLoaded) {
+      $0.selectedCustomCommands = [commandB]
+      $0.resolvedKeybindings = KeybindingResolver.resolve(
+        schema: .appResolverSchema(customCommands: [commandB]),
+        migratedOverrides:
+          LegacyCustomCommandShortcutMigration
+          .migrate(commands: [commandB])
+          .overrides
+      )
+    }
+
+    await store.send(.runScript)
+    await store.send(.runCustomCommand(0))
+    await store.finish()
+
+    #expect(
+      sent.value == [
+        .runScript(worktreeB, script: "npm run repo-b"),
+        .createTabWithInput(
+          worktreeB,
+          input: "make repo-b",
+          runSetupScriptIfNew: false,
+          autoCloseOnSuccess: false,
+          customCommandName: "Repo B Build",
+          customCommandIcon: "b.circle"
+        ),
+      ]
+    )
+  }
+
   private func makeWorktree() -> Worktree {
+    makeWorktree(id: "/tmp/repo/wt-1", name: "wt-1", repoRoot: "/tmp/repo")
+  }
+
+  private func makeWorktree(id: String, name: String, repoRoot: String) -> Worktree {
     Worktree(
-      id: "/tmp/repo/wt-1",
-      name: "wt-1",
+      id: id,
+      name: name,
       detail: "detail",
-      workingDirectory: URL(fileURLWithPath: "/tmp/repo/wt-1"),
-      repositoryRootURL: URL(fileURLWithPath: "/tmp/repo")
+      workingDirectory: URL(fileURLWithPath: id),
+      repositoryRootURL: URL(fileURLWithPath: repoRoot)
     )
   }
 
   private func makeRepositoriesState(worktree: Worktree) -> RepositoriesFeature.State {
-    let repository = Repository(
-      id: "/tmp/repo",
-      rootURL: URL(fileURLWithPath: "/tmp/repo"),
-      name: "repo",
-      worktrees: [worktree]
+    makeRepositoriesState(worktrees: [worktree])
+  }
+
+  private func makeRepositoriesState(worktrees: [Worktree]) -> RepositoriesFeature.State {
+    let worktreesByRepository = Dictionary(
+      grouping: worktrees,
+      by: { $0.repositoryRootURL.path(percentEncoded: false) }
     )
+    let repositories =
+      worktreesByRepository.keys.sorted().compactMap { rootPath in
+        worktreesByRepository[rootPath].map { worktrees in
+          let rootURL = URL(fileURLWithPath: rootPath)
+          return Repository(
+            id: rootPath,
+            rootURL: rootURL,
+            name: rootURL.lastPathComponent,
+            worktrees: IdentifiedArray(uniqueElements: worktrees)
+          )
+        }
+      }
     var repositoriesState = RepositoriesFeature.State()
-    repositoriesState.repositories = [repository]
-    repositoriesState.selection = .worktree(worktree.id)
+    repositoriesState.repositories = IdentifiedArray(uniqueElements: repositories)
+    repositoriesState.selection = worktrees.first.map { .worktree($0.id) }
     return repositoriesState
   }
 }
