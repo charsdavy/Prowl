@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import ComposableArchitecture
 import SwiftUI
 
@@ -85,6 +87,12 @@ struct NotificationsSettingsView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .task {
+      store.send(.refreshDockBadgeAuthorization)
+    }
+    // Changing the notification permission or "Badge app icon" switch happens
+    // in System Settings, so the moment Prowl regains focus is when to re-read
+    // the macOS state and update the toggle live (no restart needed).
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
       store.send(.refreshDockBadgeAuthorization)
     }
   }
