@@ -20,11 +20,6 @@ struct NotificationsSettingsView: View {
           )
           .help("Play a sound when a notification is received")
           Toggle(
-            "System notifications",
-            isOn: $store.systemNotificationsEnabled
-          )
-          .help("Show macOS system notifications")
-          Toggle(
             "Move notified worktree to top",
             isOn: $store.moveNotifiedWorktreeToTop
           )
@@ -38,11 +33,24 @@ struct NotificationsSettingsView: View {
             }
           }
           .help("Bounce the Prowl app icon in the Dock when a notification is received.")
+        }
+        Section("System") {
           Toggle(
-            "Show notification dot on dock icon",
+            "System notifications",
+            isOn: $store.systemNotificationsEnabled
+          )
+          .help("Show macOS system notification banners")
+          Toggle(
+            "Show notification badge on dock icon",
             isOn: $store.showNotificationDotOnDock
           )
-          .help("Show a badge on the Prowl dock icon while notifications are pending.")
+          .help("Show the unread worktree count on the Prowl dock icon.")
+          .disabled(!dockBadgeAvailable)
+          if let dockBadgeCaption {
+            Text(dockBadgeCaption)
+              .font(.callout)
+              .foregroundStyle(.secondary)
+          }
         }
         Section("Command Finished") {
           Toggle(
@@ -76,5 +84,23 @@ struct NotificationsSettingsView: View {
       .formStyle(.grouped)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .task {
+      store.send(.refreshDockBadgeAuthorization)
+    }
+  }
+
+  private var dockBadgeAvailable: Bool {
+    store.dockBadgeAuthorization == .available
+  }
+
+  private var dockBadgeCaption: String? {
+    switch store.dockBadgeAuthorization {
+    case .available:
+      return nil
+    case .notificationsDenied:
+      return "Allow notifications for Prowl in System Settings to show the Dock badge."
+    case .badgeDisabled:
+      return "Turn on “Badge app icon” for Prowl in System Settings > Notifications."
+    }
   }
 }

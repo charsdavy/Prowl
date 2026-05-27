@@ -47,6 +47,10 @@ struct SettingsFeature {
     var showNotificationDotOnDock: Bool
     var cliInstallStatus: CLIInstallStatus = .notInstalled
     var cliInstallShowAlert: Bool = true
+    /// Whether macOS will render the Dock notification badge (notification
+    /// permission + the per-app "Badge app icon" switch). Refreshed when the
+    /// Notifications settings pane appears.
+    var dockBadgeAuthorization: SystemNotificationClient.DockBadgeAuthorization = .available
     var selection: SettingsSection? = .general
     var repositorySettings: RepositorySettingsFeature.State?
     @Presents var alert: AlertState<Alert>?
@@ -148,6 +152,8 @@ struct SettingsFeature {
     case uninstallCLIButtonTapped
     case cliInstallCompleted(Result<String, CLIInstallError>)
     case refreshCLIInstallStatus
+    case refreshDockBadgeAuthorization
+    case dockBadgeAuthorizationResponse(SystemNotificationClient.DockBadgeAuthorization)
     case showNotificationPermissionAlert(errorMessage: String?)
     case repositorySettings(RepositorySettingsFeature.Action)
     case alert(PresentationAction<Alert>)
@@ -342,6 +348,15 @@ struct SettingsFeature {
 
       case .refreshCLIInstallStatus:
         state.cliInstallStatus = cliInstallClient.installationStatus(cliDefaultInstallPath)
+        return .none
+
+      case .refreshDockBadgeAuthorization:
+        return .run { send in
+          await send(.dockBadgeAuthorizationResponse(systemNotificationClient.dockBadgeAuthorization()))
+        }
+
+      case .dockBadgeAuthorizationResponse(let authorization):
+        state.dockBadgeAuthorization = authorization
         return .none
 
       case .showNotificationPermissionAlert(let errorMessage):
