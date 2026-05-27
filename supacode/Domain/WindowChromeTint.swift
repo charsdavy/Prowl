@@ -70,31 +70,21 @@ enum WindowChromeTint {
     color == nil ? neutralPeakAlpha : saturatedPeakAlpha
   }
 
-  /// Base hue for a Shelf spine surface. When `followsRepositoryColor` is
-  /// true, a pinned repo color wins; otherwise every spine uses the user's
-  /// fallback style.
-  static func shelfSpineBase(
+  /// Surface hue and peak alpha for a Shelf spine. When
+  /// `followsRepositoryColor` is true, a pinned repo color wins (saturated
+  /// peak); otherwise every spine uses the user's fallback style — `.neutral`
+  /// stays gentler, `.systemTint` uses the saturated shelf/chrome peak. Base
+  /// and alpha share one branch so they can never disagree.
+  static func shelfSpineSurface(
     for color: RepositoryColorChoice?,
     fallback: ShelfSpineTintFallback,
     followsRepositoryColor: Bool
-  ) -> Color {
+  ) -> (base: Color, peakAlpha: Double) {
     if followsRepositoryColor, let color {
-      return color.color
+      return (color.color, saturatedPeakAlpha)
     }
-    return shelfSpineFallbackBase(fallback)
-  }
-
-  /// Peak alpha for a Shelf spine surface. Neutral fallbacks stay gentler;
-  /// pinned repo colors and system tint use the saturated shelf/chrome peak.
-  static func shelfSpinePeakAlpha(
-    for color: RepositoryColorChoice?,
-    fallback: ShelfSpineTintFallback,
-    followsRepositoryColor: Bool
-  ) -> Double {
-    if followsRepositoryColor, color != nil {
-      return saturatedPeakAlpha
-    }
-    return fallback == .neutral ? neutralPeakAlpha : saturatedPeakAlpha
+    let peakAlpha = fallback == .neutral ? neutralPeakAlpha : saturatedPeakAlpha
+    return (shelfSpineFallbackBase(fallback), peakAlpha)
   }
 
   private static func shelfSpineFallbackBase(_ fallback: ShelfSpineTintFallback) -> Color {

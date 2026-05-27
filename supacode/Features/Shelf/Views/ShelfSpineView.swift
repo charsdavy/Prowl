@@ -135,18 +135,12 @@ struct ShelfSpineView: View {
       return Color.primary.opacity(0.06)
     }
     let multiplier = isHovering && !isOpen ? 0.8 : accentProximityMultiplier
-    return WindowChromeTint.shelfSpineBase(
+    let surface = WindowChromeTint.shelfSpineSurface(
       for: appearance.color,
       fallback: tintFallback,
       followsRepositoryColor: followsRepositoryColor
     )
-    .opacity(
-      WindowChromeTint.shelfSpinePeakAlpha(
-        for: appearance.color,
-        fallback: tintFallback,
-        followsRepositoryColor: followsRepositoryColor
-      ) * multiplier
-    )
+    return surface.base.opacity(surface.peakAlpha * multiplier)
   }
 
   /// Tint used as the header icon color and the active-tab highlight. It

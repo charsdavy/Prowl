@@ -46,56 +46,57 @@ struct WindowChromeTintTests {
 
   @Test
   func shelfSpineUsesNeutralFallbackByDefaultForUncoloredRepositories() {
-    #expect(
-      WindowChromeTint.shelfSpineBase(
-        for: nil,
-        fallback: .neutral,
-        followsRepositoryColor: true
-      ) == .primary
+    let surface = WindowChromeTint.shelfSpineSurface(
+      for: nil,
+      fallback: .neutral,
+      followsRepositoryColor: true
     )
-    #expect(
-      WindowChromeTint.shelfSpinePeakAlpha(
-        for: nil,
-        fallback: .neutral,
-        followsRepositoryColor: true
-      ) == WindowChromeTint.neutralPeakAlpha
-    )
+    #expect(surface.base == .primary)
+    #expect(surface.peakAlpha == WindowChromeTint.neutralPeakAlpha)
   }
 
   @Test
   func shelfSpineCanUseSystemTintFallbackForUncoloredRepositories() {
-    #expect(
-      WindowChromeTint.shelfSpineBase(
-        for: nil,
-        fallback: .systemTint,
-        followsRepositoryColor: true
-      ) == .accentColor
+    let surface = WindowChromeTint.shelfSpineSurface(
+      for: nil,
+      fallback: .systemTint,
+      followsRepositoryColor: true
     )
-    #expect(
-      WindowChromeTint.shelfSpinePeakAlpha(
-        for: nil,
-        fallback: .systemTint,
-        followsRepositoryColor: true
-      ) == WindowChromeTint.saturatedPeakAlpha
+    #expect(surface.base == .accentColor)
+    #expect(surface.peakAlpha == WindowChromeTint.saturatedPeakAlpha)
+  }
+
+  @Test
+  func shelfSpineFollowsRepositoryColorAtSaturatedAlpha() {
+    // A pinned color wins regardless of the fallback when following is on.
+    let surface = WindowChromeTint.shelfSpineSurface(
+      for: .green,
+      fallback: .neutral,
+      followsRepositoryColor: true
     )
+    #expect(surface.base == .green)
+    #expect(surface.peakAlpha == WindowChromeTint.saturatedPeakAlpha)
   }
 
   @Test
   func shelfSpineCanIgnoreRepositoryColors() {
-    #expect(
-      WindowChromeTint.shelfSpineBase(
-        for: .green,
-        fallback: .neutral,
-        followsRepositoryColor: false
-      ) == .primary
+    // With following off, the fallback style drives both base and alpha even
+    // for a colored repo.
+    let neutral = WindowChromeTint.shelfSpineSurface(
+      for: .green,
+      fallback: .neutral,
+      followsRepositoryColor: false
     )
-    #expect(
-      WindowChromeTint.shelfSpineBase(
-        for: .green,
-        fallback: .systemTint,
-        followsRepositoryColor: false
-      ) == .accentColor
+    #expect(neutral.base == .primary)
+    #expect(neutral.peakAlpha == WindowChromeTint.neutralPeakAlpha)
+
+    let systemTint = WindowChromeTint.shelfSpineSurface(
+      for: .green,
+      fallback: .systemTint,
+      followsRepositoryColor: false
     )
+    #expect(systemTint.base == .accentColor)
+    #expect(systemTint.peakAlpha == WindowChromeTint.saturatedPeakAlpha)
   }
 
   // MARK: - Toolbar background resolution

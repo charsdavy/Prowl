@@ -70,7 +70,7 @@ struct AppearanceSettingsView: View {
               Text(fallback.title).tag(fallback)
             }
           }
-          .help("Choose how Shelf spines are tinted when no repository color is available.")
+          .help("Spine style for repositories without a color, or for every spine when Follow Repo Color is off.")
           Toggle(
             "Follow Repo Color Setting",
             isOn: $store.shelfSpineTintFollowsRepositoryColor
