@@ -31,15 +31,29 @@ nonisolated struct CrossRepoPullRequestResponse: Decodable {
     }
   }
 
-  func failedAliases() -> Set<String> {
-    var aliases: Set<String> = []
+  func errorMessagesByAlias() -> [String: String] {
+    var messages: [String: String] = [:]
     for error in errors {
-      guard let first = error.path.first else {
+      guard let alias = error.path.first else {
         continue
       }
-      aliases.insert(first)
+      let description = describeError(error)
+      if let existing = messages[alias], !existing.isEmpty {
+        messages[alias] = "\(existing); \(description)"
+      } else {
+        messages[alias] = description
+      }
     }
-    return aliases
+    return messages
+  }
+
+  private func describeError(_ error: CrossRepoPullRequestResponseError) -> String {
+    let message = error.message ?? "GraphQL error"
+    if error.path.count > 1 {
+      let field = error.path.dropFirst().joined(separator: ".")
+      return "\(message) (at \(field))"
+    }
+    return message
   }
 
   private enum TopLevelKey: String, CodingKey {

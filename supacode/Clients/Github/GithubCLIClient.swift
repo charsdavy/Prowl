@@ -362,9 +362,12 @@ nonisolated private func sanitizeCrossRepoRequests(
   var sanitized: [CrossRepoPullRequestRequest] = []
   for request in requests {
     var seen = Set<String>()
-    let branches = request.branches.filter { value in
+    let branches = request.branches.compactMap { value -> String? in
       let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-      return !trimmed.isEmpty && seen.insert(value).inserted
+      guard !trimmed.isEmpty, seen.insert(trimmed).inserted else {
+        return nil
+      }
+      return trimmed
     }
     guard !branches.isEmpty else {
       continue
@@ -486,12 +489,12 @@ nonisolated private func fetchCrossRepoChunk(
   decoder.dateDecodingStrategy = .iso8601
   let response = try decoder.decode(CrossRepoPullRequestResponse.self, from: data)
 
-  let failedAliases = response.failedAliases()
+  let errorMessagesByAlias = response.errorMessagesByAlias()
   var success: [RepoKey: [String: GithubPullRequest]] = [:]
   var failed: [RepoKey: GithubCLIError] = [:]
   for (alias, key) in plan.repoAliases {
-    if failedAliases.contains(alias) {
-      failed[key] = .commandFailed("Partial GraphQL error for \(key.owner)/\(key.repo)")
+    if let detail = errorMessagesByAlias[alias] {
+      failed[key] = .commandFailed("GraphQL error for \(key.owner)/\(key.repo): \(detail)")
       continue
     }
     guard let payload = response.repositories[alias] else {
