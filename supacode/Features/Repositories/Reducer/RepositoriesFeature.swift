@@ -169,6 +169,8 @@ struct RepositoriesFeature {
     case setGithubIntegrationEnabled(Bool)
     case setMergedWorktreeAction(MergedWorktreeAction?)
     case pullRequestAction(Worktree.ID, PullRequestAction)
+    case cacheRemoteInfo(repositoryID: Repository.ID, remoteInfo: GithubRemoteInfo)
+    case pullRequestRefreshBatchOutcome(PullRequestRefreshCoordinator.Outcome)
   }
 
   @CasePathable
@@ -239,6 +241,7 @@ struct RepositoriesFeature {
     var pendingPullRequestRefreshByRepositoryID: [Repository.ID: PendingPullRequestRefresh] = [:]
     var inFlightPullRequestRefreshRepositoryIDs: Set<Repository.ID> = []
     var queuedPullRequestRefreshByRepositoryID: [Repository.ID: PendingPullRequestRefresh] = [:]
+    var remoteInfoByRepositoryID: [Repository.ID: GithubRemoteInfo] = [:]
     var codeHostByRepositoryID: [Repository.ID: CodeHost] = [:]
     var sidebarSelectedWorktreeIDs: Set<Worktree.ID> = []
     var nextPendingSidebarRevealID = 0
@@ -402,6 +405,7 @@ struct RepositoriesFeature {
   @Dependency(AnalyticsClient.self) var analyticsClient
   @Dependency(GitClientDependency.self) var gitClient
   @Dependency(GithubCLIClient.self) var githubCLI
+  @Dependency(PullRequestRefreshCoordinatorClient.self) var pullRequestRefreshCoordinator
   @Dependency(GithubIntegrationClient.self) var githubIntegration
   @Dependency(OpenURLClient.self) var openURLClient
   @Dependency(RepositoryPersistenceClient.self) var repositoryPersistence
@@ -1251,52 +1255,6 @@ struct RepositoriesFeature {
       let meaningful = detected.filter { $0.value != .unknown }
       guard !meaningful.isEmpty else { return }
       await send(.codeHostsDetected(meaningful))
-    }
-  }
-
-  func refreshRepositoryPullRequests(
-    repositoryID: Repository.ID,
-    repositoryRootURL: URL,
-    worktrees: [Worktree],
-    branches: [String]
-  ) -> Effect<Action> {
-    let gitClient = gitClient
-    let githubCLI = githubCLI
-    return .run { send in
-      guard
-        let remoteInfo = await Self.resolveGithubRemoteInfo(
-          repositoryRootURL: repositoryRootURL,
-          githubCLI: githubCLI,
-          gitClient: gitClient
-        )
-      else {
-        await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
-        return
-      }
-      do {
-        let prsByBranch = try await githubCLI.batchPullRequests(
-          remoteInfo.host,
-          remoteInfo.owner,
-          remoteInfo.repo,
-          branches
-        )
-        var pullRequestsByWorktreeID: [Worktree.ID: GithubPullRequest?] = [:]
-        for worktree in worktrees {
-          pullRequestsByWorktreeID[worktree.id] = prsByBranch[worktree.name]
-        }
-        await send(
-          .githubIntegration(
-            .repositoryPullRequestsLoaded(
-              repositoryID: repositoryID,
-              pullRequestsByWorktreeID: pullRequestsByWorktreeID
-            )
-          )
-        )
-      } catch {
-        await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
-        return
-      }
-      await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
     }
   }
 

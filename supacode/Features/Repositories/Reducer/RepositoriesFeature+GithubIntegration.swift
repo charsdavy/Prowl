@@ -11,10 +11,15 @@ extension RepositoriesFeature {
     githubCLI: GithubCLIClient,
     gitClient: GitClientDependency
   ) async -> GithubRemoteInfo? {
-    if let remoteInfo = await githubCLI.resolveRemoteInfo(repositoryRootURL) {
+    // Parsing the local git remote URL is ~20x faster than spawning `gh repo view`
+    // (no gh subprocess, no network round trip). The batched GraphQL query that
+    // follows is itself authoritative about whether the repo exists on GitHub, so
+    // gh is only useful as a fallback for non-standard remotes that the regex in
+    // GitClient cannot parse.
+    if let remoteInfo = await gitClient.remoteInfo(repositoryRootURL) {
       return remoteInfo
     }
-    return await gitClient.remoteInfo(repositoryRootURL)
+    return await githubCLI.resolveRemoteInfo(repositoryRootURL)
   }
 }
 
@@ -74,11 +79,12 @@ extension RepositoriesFeature {
           return .none
         }
         state.inFlightPullRequestRefreshRepositoryIDs.insert(repositoryID)
-        return refreshRepositoryPullRequests(
+        return enqueueBatchedPullRequestRefresh(
           repositoryID: repositoryID,
           repositoryRootURL: repositoryRootURL,
           worktrees: worktrees,
-          branches: branches
+          branches: branches,
+          cachedRemoteInfo: state.remoteInfoByRepositoryID[repositoryID]
         )
       case .unknown:
         queuePullRequestRefresh(
@@ -624,6 +630,91 @@ extension RepositoriesFeature {
     case .setMergedWorktreeAction(let action):
       state.mergedWorktreeAction = action
       return .none
+
+    case .cacheRemoteInfo(let repositoryID, let remoteInfo):
+      state.remoteInfoByRepositoryID[repositoryID] = remoteInfo
+      return .none
+
+    case .pullRequestRefreshBatchOutcome(let outcome):
+      return reduceBatchOutcome(state: &state, outcome: outcome)
+    }
+  }
+
+  private func reduceBatchOutcome(
+    state: inout State,
+    outcome: PullRequestRefreshCoordinator.Outcome
+  ) -> Effect<Action> {
+    switch outcome {
+    case .refreshed(let repositoryID, _, let worktreeIDs, let prsByBranch):
+      guard let repository = state.repositories[id: repositoryID] else {
+        state.inFlightPullRequestRefreshRepositoryIDs.remove(repositoryID)
+        return .none
+      }
+      var prsByWorktreeID: [Worktree.ID: GithubPullRequest?] = [:]
+      for worktreeID in worktreeIDs {
+        if let worktree = repository.worktrees[id: worktreeID] {
+          prsByWorktreeID[worktreeID] = prsByBranch[worktree.name]
+        }
+      }
+      return .merge(
+        .send(
+          .githubIntegration(
+            .repositoryPullRequestsLoaded(
+              repositoryID: repositoryID,
+              pullRequestsByWorktreeID: prsByWorktreeID
+            )
+          )
+        ),
+        .send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
+      )
+    case .failed(let repositoryID, _, _):
+      return .send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
+    }
+  }
+
+  func enqueueBatchedPullRequestRefresh(
+    repositoryID: Repository.ID,
+    repositoryRootURL: URL,
+    worktrees: [Worktree],
+    branches: [String],
+    cachedRemoteInfo: GithubRemoteInfo?
+  ) -> Effect<Action> {
+    let worktreeIDs = worktrees.map(\.id)
+    let coordinatorClient = pullRequestRefreshCoordinator
+    let githubCLI = self.githubCLI
+    let gitClient = self.gitClient
+    return .run { send in
+      let resolvedRemoteInfo: GithubRemoteInfo?
+      if let cachedRemoteInfo {
+        resolvedRemoteInfo = cachedRemoteInfo
+      } else {
+        let info = await RepositoriesFeature.resolveGithubRemoteInfo(
+          repositoryRootURL: repositoryRootURL,
+          githubCLI: githubCLI,
+          gitClient: gitClient
+        )
+        if let info {
+          await send(
+            .githubIntegration(.cacheRemoteInfo(repositoryID: repositoryID, remoteInfo: info))
+          )
+        }
+        resolvedRemoteInfo = info
+      }
+      guard let info = resolvedRemoteInfo else {
+        await send(.githubIntegration(.repositoryPullRequestRefreshCompleted(repositoryID)))
+        return
+      }
+      coordinatorClient.enqueue(
+        PullRequestRefreshCoordinator.Request(
+          repositoryID: repositoryID,
+          repositoryRootURL: repositoryRootURL,
+          host: info.host,
+          owner: info.owner,
+          repo: info.repo,
+          branches: branches,
+          worktreeIDs: worktreeIDs
+        )
+      )
     }
   }
 
