@@ -1119,6 +1119,129 @@ struct RepositoriesFeatureTests {
     await store.receive(\.delegate.selectedWorktreeChanged)
   }
 
+  @Test func selectRepositoryInCanvasRequestsCanvasFocusWithoutLeavingCanvas() async {
+    let worktree = makeWorktree(id: "/tmp/repo/main", name: "main", repoRoot: "/tmp/repo")
+    let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
+    var initialState = makeState(repositories: [repository])
+    initialState.selection = .canvas
+
+    let sentCommands = LockIsolated<[TerminalClient.Command]>([])
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.terminalClient.send = { command in
+        sentCommands.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.selectRepository(repository.id)) {
+      $0.pendingCanvasFocusRequest = CanvasFocusRequest(
+        id: 1,
+        target: .worktree(worktree.id)
+      )
+      $0.openedWorktreeIDs = [worktree.id]
+    }
+    await store.finish()
+
+    #expect(store.state.selection == .canvas)
+    #expect(
+      sentCommands.value == [
+        .ensureInitialTab(worktree, runSetupScriptIfNew: false, focusing: false)
+      ]
+    )
+  }
+
+  @Test func selectPlainRepositoryInCanvasRequestsCanvasFocusWithoutLeavingCanvas() async {
+    let repository = makeRepository(
+      id: "/tmp/folder",
+      name: "folder",
+      kind: .plain,
+      worktrees: []
+    )
+    var initialState = makeState(repositories: [repository])
+    initialState.selection = .canvas
+
+    let expectedWorktree = Worktree(
+      id: repository.id,
+      name: repository.name,
+      detail: repository.rootURL.path(percentEncoded: false),
+      workingDirectory: repository.rootURL,
+      repositoryRootURL: repository.rootURL
+    )
+    let sentCommands = LockIsolated<[TerminalClient.Command]>([])
+    let store = TestStore(initialState: initialState) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.terminalClient.send = { command in
+        sentCommands.withValue { $0.append(command) }
+      }
+    }
+
+    await store.send(.selectRepository(repository.id)) {
+      $0.pendingCanvasFocusRequest = CanvasFocusRequest(
+        id: 1,
+        target: .worktree(repository.id)
+      )
+      $0.openedWorktreeIDs = [repository.id]
+    }
+    await store.finish()
+
+    #expect(store.state.selection == .canvas)
+    #expect(
+      sentCommands.value == [
+        .ensureInitialTab(expectedWorktree, runSetupScriptIfNew: false, focusing: false)
+      ]
+    )
+  }
+
+  @Test func activeAgentEntryTappedInCanvasRequestsExactCardFocusWithoutLeavingCanvas() async {
+    let worktree = makeWorktree(id: "/tmp/repo/main", name: "main", repoRoot: "/tmp/repo")
+    let repository = makeRepository(id: "/tmp/repo", worktrees: [worktree])
+    var state = makeState(repositories: [repository])
+    state.selection = .canvas
+    let surfaceID = UUID()
+    let tabID = TerminalTabID(rawValue: UUID())
+    let entry = ActiveAgentEntry(
+      id: surfaceID,
+      worktreeID: worktree.id,
+      worktreeName: worktree.name,
+      workingDirectory: nil,
+      tabID: tabID,
+      tabTitle: "agent",
+      surfaceID: surfaceID,
+      paneIndex: 0,
+      agent: .codex,
+      rawState: .working,
+      displayState: .working,
+      lastChangedAt: Date(timeIntervalSince1970: 0)
+    )
+    state.activeAgents.entries = [entry]
+
+    let focusedSurface = LockIsolated<(Worktree.ID, UUID)?>(nil)
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature()
+    } withDependencies: {
+      $0.terminalClient.focusSurface = { worktreeID, surface in
+        focusedSurface.setValue((worktreeID, surface))
+        return true
+      }
+    }
+
+    await store.send(.activeAgents(.entryTapped(entry.id))) {
+      $0.activeAgents.focusedSurfaceID = surfaceID
+      $0.pendingCanvasFocusRequest = CanvasFocusRequest(
+        id: 1,
+        target: .tab(tabID)
+      )
+      $0.openedWorktreeIDs = [worktree.id]
+    }
+    await store.finish()
+
+    #expect(store.state.selection == .canvas)
+    #expect(focusedSurface.value?.0 == worktree.id)
+    #expect(focusedSurface.value?.1 == surfaceID)
+  }
+
   @Test func selectPlainRepositorySendsPlainFolderTerminalTargetDelegate() async {
     let repository = makeRepository(
       id: "/tmp/folder",

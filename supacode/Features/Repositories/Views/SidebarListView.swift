@@ -448,10 +448,15 @@ struct SidebarListView: View {
         }
       }
       sidebarSelections = []
+      if store.state.isShowingCanvas {
+        store.send(.selectRepository(repository.id))
+      }
     } else {
       sidebarSelections = [.repository(repository.id)]
       store.send(.selectRepository(repository.id))
-      focusTerminalAfterSidebarSelection(worktreeID: store.state.selectedTerminalWorktree?.id)
+      if !store.state.isShowingCanvas {
+        focusTerminalAfterSidebarSelection(worktreeID: store.state.selectedTerminalWorktree?.id)
+      }
     }
   }
 
