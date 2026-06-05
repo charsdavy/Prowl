@@ -756,13 +756,16 @@ struct CanvasView: View {
         )
       )
     )
-    canvasScale = targetScale
-    canvasOffset = CGSize(
+    let targetOffset = CGSize(
       width: viewportSize.width / 2 - layout.position.x * targetScale,
       height: (viewportSize.height - bottomToolbarReserve) / 2 - layout.position.y * targetScale
     )
-    lastCanvasScale = targetScale
-    lastCanvasOffset = canvasOffset
+    withAnimation(.easeInOut(duration: 0.22)) {
+      canvasScale = targetScale
+      canvasOffset = targetOffset
+      lastCanvasScale = targetScale
+      lastCanvasOffset = targetOffset
+    }
   }
 
   private func handleSelectionShieldTap(
