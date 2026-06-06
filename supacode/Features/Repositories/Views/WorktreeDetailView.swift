@@ -393,9 +393,6 @@ struct WorktreeDetailView: View {
         terminalManager: terminalManager,
         repositoryCustomTitles: repositories.repositoryCustomTitles,
         focusRequest: repositories.pendingCanvasFocusRequest,
-        onExitToTab: {
-          store.send(.repositories(.toggleCanvas))
-        },
         onFocusedWorktreeChanged: { worktreeID in
           store.send(.canvasFocusedWorktreeChanged(worktreeID))
         },
