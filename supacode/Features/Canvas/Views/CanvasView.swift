@@ -84,7 +84,8 @@ struct CanvasView: View {
       offset: $canvasOffset,
       lastOffset: $lastCanvasOffset,
       scale: $canvasScale,
-      lastScale: $lastCanvasScale
+      lastScale: $lastCanvasScale,
+      isInteractionEnabled: expandedTabID == nil
     ) {
       GeometryReader { _ in
         let activeStates = terminalManager.activeWorktreeStates
@@ -134,12 +135,12 @@ struct CanvasView: View {
           .contentShape(.rect)
           .accessibilityAddTraits(.isButton)
           .onTapGesture { clearSelection(states: activeStates) }
-          .gesture(canvasPanGesture)
+          .gesture(canvasPanGesture, isEnabled: expandedTabID == nil)
 
         cardsLayer(activeStates: activeStates)
       }
       .contentShape(.rect)
-      .simultaneousGesture(canvasZoomGesture)
+      .simultaneousGesture(canvasZoomGesture, isEnabled: expandedTabID == nil)
       .animation(.easeInOut(duration: 0.22), value: focusViewportAnimationID)
       .onGeometryChange(for: CGSize.self) { proxy in
         proxy.size
@@ -235,7 +236,11 @@ struct CanvasView: View {
       // it — i.e. anywhere outside the expanded card, including the padding —
       // restores the layout.
       if expandedTabID != nil {
-        Color.black.opacity(0.3)
+        // Material gives a GPU-efficient backdrop blur (the background cards stay
+        // faintly visible / running); the black overlay adds the dim on top.
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .overlay(Color.black.opacity(0.2))
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .contentShape(.rect)
           .accessibilityAddTraits(.isButton)
@@ -1136,6 +1141,7 @@ private struct CanvasScrollContainer<Content: View>: NSViewRepresentable {
   @Binding var lastOffset: CGSize
   @Binding var scale: CGFloat
   @Binding var lastScale: CGFloat
+  var isInteractionEnabled: Bool
   @ViewBuilder var content: Content
 
   func makeCoordinator() -> CanvasScrollCoordinator {
@@ -1162,6 +1168,7 @@ private struct CanvasScrollContainer<Content: View>: NSViewRepresentable {
     context.coordinator.lastOffset = $lastOffset
     context.coordinator.scale = $scale
     context.coordinator.lastScale = $lastScale
+    nsView.isInteractionEnabled = isInteractionEnabled
     if let hosting = nsView.subviews.first as? NSHostingView<Content> {
       hosting.rootView = content
     }
@@ -1242,6 +1249,15 @@ enum CanvasZoomMath {
 
 private class CanvasScrollContainerView: NSView {
   var scrollCoordinator: CanvasScrollCoordinator?
+  /// When false (a card is expanded), the container ignores scroll/zoom/
+  /// middle-drag so the canvas can't pan or zoom behind the expanded card.
+  var isInteractionEnabled = true {
+    didSet {
+      guard !isInteractionEnabled, oldValue else { return }
+      if isMiddlePanning { endMiddlePan() }
+      isPanning = false
+    }
+  }
 
   /// Whether the container is actively redirecting scroll events to canvas
   /// panning (as opposed to the brief bounce period after a gesture ends).
@@ -1262,6 +1278,10 @@ private class CanvasScrollContainerView: NSView {
   private var hasPushedPanCursor = false
 
   override func scrollWheel(with event: NSEvent) {
+    guard isInteractionEnabled else {
+      super.scrollWheel(with: event)
+      return
+    }
     if handleZoomEventIfNeeded(event) { return }
     if event.phase == .began {
       startPanning()
@@ -1277,6 +1297,7 @@ private class CanvasScrollContainerView: NSView {
   /// Used by both the direct `scrollWheel` override and the local monitor so
   /// pressing Cmd mid-gesture switches behavior immediately.
   fileprivate func handleZoomEventIfNeeded(_ event: NSEvent) -> Bool {
+    guard isInteractionEnabled else { return false }
     guard event.modifierFlags.contains(.command), event.scrollingDeltaY != 0 else { return false }
     let viewLocation = convert(event.locationInWindow, from: nil)
     let anchor = CGPoint(x: viewLocation.x, y: bounds.height - viewLocation.y)
@@ -1303,6 +1324,7 @@ private class CanvasScrollContainerView: NSView {
   private func installMonitor() {
     scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
       guard let self, event.window === self.window else { return event }
+      guard self.isInteractionEnabled else { return event }
 
       // Cmd toggled mid-gesture — switch to zoom for this event.
       if self.handleZoomEventIfNeeded(event) { return nil }
@@ -1396,6 +1418,7 @@ private class CanvasScrollContainerView: NSView {
     let mask: NSEvent.EventTypeMask = [.otherMouseDown, .otherMouseDragged, .otherMouseUp]
     middleButtonMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
       guard let self, event.window === self.window, event.buttonNumber == 2 else { return event }
+      guard self.isInteractionEnabled else { return event }
 
       switch event.type {
       case .otherMouseDown:
