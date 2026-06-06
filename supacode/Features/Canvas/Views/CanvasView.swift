@@ -258,95 +258,94 @@ struct CanvasView: View {
     let cardKey = tab.id.rawValue.uuidString
     let baseLayout = layoutStore.cardLayouts[cardKey] ?? CanvasCardLayout(position: .zero)
     let isCardExpanded = expandedTabID == tab.id
-    // An expanded card transforms on its own — full-viewport size/center at
-    // scale 1 — independent of the canvas pan/zoom, so the background is frozen.
-    // Non-expanded cards keep their normal resize-aware geometry.
-    let geometry = cardScreenGeometry(for: tab.id, baseLayout: baseLayout)
-    let renderSize = geometry.size
-    let appliedScale = geometry.scale
-    let screenCenter = geometry.center
-    let cardTotalHeight = renderSize.height + titleBarHeight
+    // The expanded card magic-moves between its in-canvas frame and the full
+    // viewport. AnimatedExpandableCard drives every sub-value (size, center,
+    // scale) from one animatable progress, so they advance frame by frame in
+    // lock-step. The canvas transform is never touched → background frozen.
+    let fromGeometry = nonExpandedGeometry(for: tab.id, baseLayout: baseLayout)
+    let toGeometry = expandedGeometry()
     let unfocusedSplitOverlay = terminalManager.unfocusedSplitOverlay()
     let splitDivider = terminalManager.splitDividerAppearance()
     let repositoryAppearance = appearance(for: state.repositoryRootURL)
     let resolvedRepositoryName = repositoryDisplayName(for: state.repositoryRootURL)
 
-    CanvasCardView(
-      repositoryName: resolvedRepositoryName,
-      worktreeName: tab.displayTitle,
-      repositoryIcon: repositoryAppearance.icon,
-      repositoryColor: repositoryAppearance.color?.color,
-      repositoryRootURL: state.repositoryRootURL,
-      tree: tree,
-      activeSurfaceID: state.activeSurfaceID(for: tab.id),
-      unfocusedSplitOverlay: unfocusedSplitOverlay,
-      splitDivider: splitDivider,
-      isFocused: selectionState.primaryTabID == tab.id,
-      isSelected: selectionState.selectedTabIDs.contains(tab.id),
-      hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
-      cardSize: renderSize,
-      isExpanded: isCardExpanded,
-      canvasScale: appliedScale,
-      showsSelectionShield: showsSelectionShield(for: tab.id),
-      onTap: {
-        let cmdHeld = NSEvent.modifierFlags.contains(.command)
-        if cmdHeld {
+    AnimatedExpandableCard(
+      progress: isCardExpanded ? 1 : 0,
+      collapsed: fromGeometry,
+      expanded: toGeometry,
+      titleBarHeight: titleBarHeight
+    ) { renderSize in
+      CanvasCardView(
+        repositoryName: resolvedRepositoryName,
+        worktreeName: tab.displayTitle,
+        repositoryIcon: repositoryAppearance.icon,
+        repositoryColor: repositoryAppearance.color?.color,
+        repositoryRootURL: state.repositoryRootURL,
+        tree: tree,
+        activeSurfaceID: state.activeSurfaceID(for: tab.id),
+        unfocusedSplitOverlay: unfocusedSplitOverlay,
+        splitDivider: splitDivider,
+        isFocused: selectionState.primaryTabID == tab.id,
+        isSelected: selectionState.selectedTabIDs.contains(tab.id),
+        hasUnseenNotification: state.hasUnseenNotification(for: tab.id),
+        cardSize: renderSize,
+        isExpanded: isCardExpanded,
+        canvasScale: isCardExpanded ? 1 : canvasScale,
+        showsSelectionShield: showsSelectionShield(for: tab.id),
+        onTap: {
+          let cmdHeld = NSEvent.modifierFlags.contains(.command)
+          if cmdHeld {
+            handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
+          } else {
+            focusSingleCard(tab.id, states: activeStates)
+          }
+        },
+        onSelectionTap: {
           handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
-        } else {
-          focusSingleCard(tab.id, states: activeStates)
-        }
-      },
-      onSelectionTap: {
-        handleSelectionShieldTap(tab.id, surfaceState: state, states: activeStates)
-      },
-      onDragCommit: { translation in commitDrag(for: cardKey, translation: translation) },
-      onResize: { edge, translation in
-        activeResize[tab.id] = ActiveResize(
-          edge: edge,
-          translation: CGSize(
-            width: translation.width / canvasScale,
-            height: translation.height / canvasScale
+        },
+        onDragCommit: { translation in commitDrag(for: cardKey, translation: translation) },
+        onResize: { edge, translation in
+          activeResize[tab.id] = ActiveResize(
+            edge: edge,
+            translation: CGSize(
+              width: translation.width / canvasScale,
+              height: translation.height / canvasScale
+            )
           )
-        )
-      },
-      onResizeEnd: { commitResize(for: tab.id, cardKey: cardKey, surfaces: tree.leaves()) },
-      onSplitOperation: { operation in
-        state.performSplitOperation(operation, in: tab.id)
-        if selectionState.isBroadcasting {
-          syncBroadcastCallbacks(states: activeStates)
-        }
-      },
-      onTitleBarTap: {
-        let wasAlreadyFocused =
-          selectionState.primaryTabID == tab.id
-          && selectionState.selectedTabIDs.count <= 1
-        focusSingleCard(tab.id, states: activeStates)
-        let now = Date()
-        if wasAlreadyFocused,
-          now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
-        {
+        },
+        onResizeEnd: { commitResize(for: tab.id, cardKey: cardKey, surfaces: tree.leaves()) },
+        onSplitOperation: { operation in
+          state.performSplitOperation(operation, in: tab.id)
+          if selectionState.isBroadcasting {
+            syncBroadcastCallbacks(states: activeStates)
+          }
+        },
+        onTitleBarTap: {
+          let wasAlreadyFocused =
+            selectionState.primaryTabID == tab.id
+            && selectionState.selectedTabIDs.count <= 1
+          focusSingleCard(tab.id, states: activeStates)
+          let now = Date()
+          if wasAlreadyFocused,
+            now.timeIntervalSince(lastTitleBarTapDate) <= NSEvent.doubleClickInterval
+          {
+            toggleExpand(tab.id, states: activeStates)
+          }
+          lastTitleBarTapDate = now
+        },
+        onExpand: {
           toggleExpand(tab.id, states: activeStates)
+        },
+        onClose: {
+          state.closeTab(tab.id)
         }
-        lastTitleBarTapDate = now
-      },
-      onExpand: {
-        toggleExpand(tab.id, states: activeStates)
-      },
-      onClose: {
-        state.closeTab(tab.id)
-      }
-    )
-    .scaleEffect(appliedScale, anchor: .center)
-    .offset(
-      x: screenCenter.x - renderSize.width / 2,
-      y: screenCenter.y - cardTotalHeight / 2
-    )
-    // Explicitly animate the expand/restore transition on this card. A plain
-    // withAnimation around expandedTabID doesn't reach here (the GeometryReader's
-    // value-scoped .animation intercepts the implicit transaction), so bind the
-    // animation directly to this card's expanded state. It drives size, center,
-    // scale, and the terminal refit together — a magic-move from the card's
-    // in-canvas frame. Only the toggled card sees the change, so the rest stay put.
+      )
+    }
+    // Animatable progress is interpolated by binding the animation to this
+    // card's expanded state. A plain withAnimation around expandedTabID doesn't
+    // reach here (the GeometryReader's value-scoped .animation swallows the
+    // implicit transaction), so drive it explicitly. Only the toggled card's
+    // value changes, so the rest stay put.
     .animation(expandAnimation, value: isCardExpanded)
     .zIndex(zIndex(for: tab.id, cardKey: cardKey))
   }
@@ -808,30 +807,26 @@ struct CanvasView: View {
     CGPoint(x: viewportSize.width / 2, y: (viewportSize.height - bottomToolbarReserve) / 2)
   }
 
-  /// Screen-space transform for a card on canvas.
-  private struct CardScreenGeometry {
-    var size: CGSize
-    var center: CGPoint
-    var scale: CGFloat
-  }
-
-  /// Screen-space size/center/scale for a card. The expanded card snaps to the
-  /// full-viewport frame at scale 1; the change is animated by the single
-  /// `withAnimation` in `expandCard`/`collapseExpand`. Because the canvas
-  /// transform is never touched, every other card stays frozen.
-  private func cardScreenGeometry(
+  /// A card's normal (non-expanded) on-screen frame, following the canvas
+  /// pan/zoom and any in-progress resize. This is the `progress = 0` endpoint of
+  /// the expand magic-move.
+  private func nonExpandedGeometry(
     for tabID: TerminalTabID,
     baseLayout: CanvasCardLayout
   ) -> CardScreenGeometry {
-    guard expandedTabID == tabID, viewportSize.width > 0, viewportSize.height > 0 else {
-      let resized = resizedFrame(for: tabID, baseLayout: baseLayout)
-      return CardScreenGeometry(
-        size: resized.size,
-        center: screenPosition(for: resized.center),
-        scale: canvasScale
-      )
-    }
+    let resized = resizedFrame(for: tabID, baseLayout: baseLayout)
     return CardScreenGeometry(
+      size: resized.size,
+      center: screenPosition(for: resized.center),
+      scale: canvasScale
+    )
+  }
+
+  /// The full-viewport expanded frame at scale 1 — the `progress = 1` endpoint.
+  /// Independent of the canvas transform, so it covers the viewport regardless
+  /// of the (frozen) background.
+  private func expandedGeometry() -> CardScreenGeometry {
+    CardScreenGeometry(
       size: CanvasExpandGeometry.expandedSize(viewport: viewportSize, metrics: expandMetrics),
       center: expandedScreenCenter,
       scale: 1
@@ -1463,5 +1458,57 @@ private class CanvasScrollContainerView: NSView {
     tearDownMonitor()
     tearDownMiddleButtonMonitor()
     super.removeFromSuperview()
+  }
+}
+
+/// Screen-space transform for a card on canvas.
+private struct CardScreenGeometry {
+  var size: CGSize
+  var center: CGPoint
+  var scale: CGFloat
+}
+
+/// An `Animatable` container that interpolates a card between its in-canvas
+/// frame (`progress` 0) and the full-viewport expanded frame (`progress` 1).
+///
+/// Because `animatableData` is `progress`, SwiftUI re-evaluates `body` on every
+/// frame of the transition, so the card's size, center, and scale advance
+/// together and the terminal re-flows in lock-step with the offset/scale — a
+/// true magic-move from where the card sits. This sidesteps SwiftUI's implicit
+/// per-modifier interpolation, which only reached the Animatable terminal and
+/// left offset/scale to snap (the "grows from the center" / "no animation" bugs).
+private struct AnimatedExpandableCard<Content: View>: View, Animatable {
+  var progress: CGFloat
+  var collapsed: CardScreenGeometry
+  var expanded: CardScreenGeometry
+  let titleBarHeight: CGFloat
+  @ViewBuilder let content: (CGSize) -> Content
+
+  var animatableData: CGFloat {
+    get { progress }
+    set { progress = newValue }
+  }
+
+  var body: some View {
+    let fraction = max(0, min(1, progress))
+    let size = CGSize(
+      width: lerp(collapsed.size.width, expanded.size.width, fraction),
+      height: lerp(collapsed.size.height, expanded.size.height, fraction)
+    )
+    let center = CGPoint(
+      x: lerp(collapsed.center.x, expanded.center.x, fraction),
+      y: lerp(collapsed.center.y, expanded.center.y, fraction)
+    )
+    let scale = lerp(collapsed.scale, expanded.scale, fraction)
+    content(size)
+      .scaleEffect(scale, anchor: .center)
+      .offset(
+        x: center.x - size.width / 2,
+        y: center.y - (size.height + titleBarHeight) / 2
+      )
+  }
+
+  private func lerp(_ start: CGFloat, _ end: CGFloat, _ fraction: CGFloat) -> CGFloat {
+    start + (end - start) * fraction
   }
 }
