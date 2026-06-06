@@ -23,7 +23,13 @@ struct CanvasCardView: View {
   let isSelected: Bool
   let hasUnseenNotification: Bool
   let cardSize: CGSize
-  let animatesSizeChanges: Bool
+  /// Whether this card is currently expanded in place (near-fullscreen). When
+  /// true the title-bar button restores instead of expands, resize handles and
+  /// title-bar dragging are disabled, and the action buttons stay visible.
+  let isExpanded: Bool
+  /// Tooltip for the expand/restore button, including the bound shortcut (the
+  /// parent resolves it since CanvasCardView has no keybindings context).
+  let expandHelp: String
   let canvasScale: CGFloat
   let showsSelectionShield: Bool
   let onTap: () -> Void
@@ -75,7 +81,7 @@ struct CanvasCardView: View {
       ZStack {
         RoundedRectangle(cornerRadius: cornerRadius)
           .stroke(borderColor, lineWidth: borderLineWidth)
-        if !showsSelectionShield {
+        if !showsSelectionShield && !isExpanded {
           resizeHandles
         }
         if showsSelectionShield {
@@ -162,7 +168,8 @@ struct CanvasCardView: View {
               width: value.translation.width / canvasScale,
               height: value.translation.height / canvasScale
             ))
-        }
+        },
+      isEnabled: !isExpanded
     )
   }
 
@@ -171,15 +178,19 @@ struct CanvasCardView: View {
       Button {
         onExpand()
       } label: {
-        Image(systemName: "arrow.up.left.and.arrow.down.right")
-          .font(.caption2.weight(.semibold))
-          .frame(width: 18, height: 18)
-          .contentShape(.rect)
+        Image(
+          systemName: isExpanded
+            ? "arrow.down.right.and.arrow.up.left"
+            : "arrow.up.left.and.arrow.down.right"
+        )
+        .font(.caption2.weight(.semibold))
+        .frame(width: 18, height: 18)
+        .contentShape(.rect)
       }
       .buttonStyle(.plain)
       .foregroundStyle(.secondary)
-      .help("Expand to tab view")
-      .accessibilityLabel("Expand card")
+      .help(expandHelp)
+      .accessibilityLabel(isExpanded ? "Restore card size" : "Expand card")
 
       Button {
         onClose()
@@ -194,8 +205,8 @@ struct CanvasCardView: View {
       .help("Close card")
       .accessibilityLabel("Close card")
     }
-    .opacity(isHoveringTitleBar ? 1 : 0)
-    .allowsHitTesting(isHoveringTitleBar)
+    .opacity(isExpanded || isHoveringTitleBar ? 1 : 0)
+    .allowsHitTesting(isExpanded || isHoveringTitleBar)
     .animation(.easeInOut(duration: 0.15), value: isHoveringTitleBar)
   }
 
@@ -238,7 +249,10 @@ struct CanvasCardView: View {
       hasNotification: { _ in false },
       action: onSplitOperation
     )
-    .animation(animatesSizeChanges ? .easeInOut(duration: 0.2) : nil, value: cardSize)
+    // No own size animation: the canvas drives every size change inside a
+    // withAnimation (expand/restore, resize commit, arrange), so the terminal
+    // refit stays in lock-step with the card's offset/scale. Without a wrapping
+    // animation (live resize drag) the size tracks the gesture 1:1.
     .allowsHitTesting(isFocused && !showsSelectionShield)
   }
 

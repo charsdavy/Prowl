@@ -39,6 +39,9 @@ struct WorktreeDetailView: View {
   /// Drive the chrome (nav + toolbar) tint for Normal and Canvas modes.
   @Shared(.repositoryAppearances) private var repositoryAppearances
   @Shared(.settingsFile) private var settingsFile
+  /// True while a Canvas card is expanded in place, so the otherwise-transparent
+  /// Canvas toolbar gets a matching material scrim instead of showing through.
+  @State private var isCanvasCardExpanded = false
 
   var body: some View {
     detailBody(state: store.state)
@@ -129,7 +132,10 @@ struct WorktreeDetailView: View {
         )
       }
     }
-    .windowToolbarChromeBackground(toolbarChromeFill(repositories: repositories))
+    .windowToolbarChromeBackground(
+      toolbarChromeFill(repositories: repositories),
+      forceMaterialScrim: repositories.isShowingCanvas && isCanvasCardExpanded
+    )
     let actions = makeFocusedActions(
       repositories: repositories,
       hasActiveWorktree: hasActiveTerminalTarget,
@@ -393,14 +399,18 @@ struct WorktreeDetailView: View {
         terminalManager: terminalManager,
         repositoryCustomTitles: repositories.repositoryCustomTitles,
         focusRequest: repositories.pendingCanvasFocusRequest,
-        onExitToTab: {
-          store.send(.repositories(.toggleCanvas))
-        },
+        commandRequest: repositories.pendingCanvasCommandRequest,
         onFocusedWorktreeChanged: { worktreeID in
           store.send(.canvasFocusedWorktreeChanged(worktreeID))
         },
         onFocusRequestConsumed: { requestID in
           store.send(.repositories(.consumeCanvasFocusRequest(requestID)))
+        },
+        onCommandConsumed: { requestID in
+          store.send(.repositories(.consumeCanvasCommandRequest(requestID)))
+        },
+        onExpandedChange: { expanded in
+          isCanvasCardExpanded = expanded
         }
       )
       // Canvas tints the nav (leading) only; the toolbar is left untinted so
