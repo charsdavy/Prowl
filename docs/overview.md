@@ -98,6 +98,12 @@ needs you.
 
 ## How a human typically uses Prowl with this doc set
 
+This whole manual ships **inside the app** (`Prowl.app/Contents/Resources/docs`).
+The fastest way in is **Help → "Ask Agent About Prowl…"** (also on the sidebar
+footer's Help menu): it copies a ready-to-paste prompt — localized to your system
+language — that points your coding agent at these bundled docs and asks it to
+introduce Prowl and suggest features for how you work. From there:
+
 1. The human asks their agent something about Prowl.
 2. The agent reads this `overview.md` (for breadth) and/or the specific
    `components/*.md` file (for depth), then answers.

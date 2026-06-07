@@ -1,6 +1,6 @@
 {
   "_comment": "Metadata for the docs/ manual. The last_synced_commit is the commit at which docs/ was last verified against the implementation; the sync-docs skill (.claude/skills/sync-docs/SKILL.md) diffs HEAD against it and updates this file. Committed to git on purpose so the baseline persists across sessions and machines. A dotfile + .json so a future docs website does not render it as a page.",
-  "last_synced_commit": "1890db8b070f191e5d5554bed84be21df5774f27",
+  "last_synced_commit": "42180405d77d03d288b182465d286f73c810be16",
   "last_synced_date": "2026-06-07",
-  "note": "No implementation changes (supacode/, ProwlCLI/, …) since the previous baseline; only docs/.claude edits in between. Docs current. Baseline advanced to keep the next diff range tight."
+  "note": "Added 'Ask Agent About Prowl' in-app help (Help menu + sidebar footer) that copies a localized prompt pointing the user's agent at the bundled docs; documented it in overview.md's 'How a human typically uses Prowl with this doc set' section. Other changes in range (SupacodePaths bundled-docs path, app wiring) are internal."
 }
