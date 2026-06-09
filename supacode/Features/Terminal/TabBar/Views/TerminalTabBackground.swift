@@ -10,10 +10,11 @@ struct TerminalTabBackground: View {
     Group {
       if isActive {
         // Selected tab floats as a Liquid Glass surface tinted by the
-        // brightness-ladder fill, for the macOS 26 look.
+        // brightness-ladder fill. Falls back to a translucent material on
+        // pre-Tahoe systems where `.glassEffect` is unavailable.
         Capsule()
           .fill(TerminalTabBarColors.activeTabBackground)
-          .glassEffect(.regular, in: Capsule())
+          .liquidGlassBackground(in: Capsule(), fallback: AnyShapeStyle(.thinMaterial))
       } else if isHovering || isPressing || isDragging {
         Capsule().fill(TerminalTabBarColors.hoveredTabBackground)
       } else {

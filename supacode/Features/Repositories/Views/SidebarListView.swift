@@ -123,14 +123,8 @@ struct SidebarListView: View {
       } action: { newHeight in
         sidebarHeight = newHeight
       }
-      .onDragSessionUpdated { session in
-        if case .ended = session.phase {
-          endSidebarDrag()
-          return
-        }
-        if case .dataTransferCompleted = session.phase {
-          endSidebarDrag()
-        }
+      .compatOnDragSessionEnded {
+        endSidebarDrag()
       }
       .safeAreaInset(edge: .top, spacing: 0) {
         topSegmentBar

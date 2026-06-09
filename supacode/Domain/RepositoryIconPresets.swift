@@ -13,7 +13,7 @@ import Foundation
 /// art → nature / vibes.
 ///
 /// All entries are restricted to SF Symbols 1–2 (macOS 11–12) baseline
-/// so they're guaranteed-available on the project's macOS 26 minimum.
+/// so they're guaranteed-available on the project's macOS 15 minimum.
 /// `.fill` variants are only listed when the symbol actually has one
 /// (e.g. `rocket.fill` was tried but doesn't exist — only `rocket`
 /// does, which renders as a question-mark placeholder if mistakenly

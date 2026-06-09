@@ -178,20 +178,9 @@ struct WorktreeRowsView: View {
         hoveredWorktreeID = nil
       }
     }
-    .onDragSessionUpdated { session in
-      let didEnd =
-        if case .ended = session.phase {
-          true
-        } else if case .dataTransferCompleted = session.phase {
-          true
-        } else {
-          false
-        }
-      handleWorktreeDragSession(
-        draggedIDs: Set(session.draggedItemIDs(for: Worktree.ID.self)),
-        didEnd: didEnd
-      )
-    }
+    .modifier(
+      WorktreeDragSessionTrackingModifier(handleSession: handleWorktreeDragSession)
+    )
   }
 
   private func rowConfig(
@@ -582,6 +571,36 @@ private struct ContextMenuActivationOverlay: NSViewRepresentable {
       isForwardingRightClick = true
       window.sendEvent(event)
       isForwardingRightClick = false
+    }
+  }
+}
+
+/// macOS 26+ uses `.onDragSessionUpdated` to read the live set of dragged
+/// `Worktree.ID`s and to clear the drag once the session ends. On macOS 15 the
+/// API doesn't exist, so we fall through without tracking — the standard
+/// drop-target handlers still complete moves correctly; they just lose the
+/// "auto-clear hover state when the user cancels mid-drag" niceties.
+private struct WorktreeDragSessionTrackingModifier: ViewModifier {
+  let handleSession: (_ draggedIDs: Set<Worktree.ID>, _ didEnd: Bool) -> Void
+
+  func body(content: Content) -> some View {
+    if #available(macOS 26.0, *) {
+      content.onDragSessionUpdated { session in
+        let didEnd =
+          if case .ended = session.phase {
+            true
+          } else if case .dataTransferCompleted = session.phase {
+            true
+          } else {
+            false
+          }
+        handleSession(
+          Set(session.draggedItemIDs(for: Worktree.ID.self)),
+          didEnd
+        )
+      }
+    } else {
+      content
     }
   }
 }

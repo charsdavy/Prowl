@@ -108,7 +108,7 @@ brew install --cask onevcat/tap/prowl
 
 ## Requirements
 
-macOS 26.0+
+macOS 15.0+
 
 ---
 
